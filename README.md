@@ -15,7 +15,7 @@ History
 - v1.0.1
  - Add Security object to provide persistant state / logic for securities
  - Add state history to security, provide easy way for things to get their own state + history of their own state.
-
+ - add multi-phase updates, allow framework to custom init securities
 
 
 Roadmap
