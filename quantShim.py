@@ -1,3 +1,25 @@
+# -*- coding: utf-8 -*-  
+"""
+TL;DR:  
+1) jump to the end of this file
+2) replace "ExampleAlgo"
+3) copy/paste this file to quantopian 
+4) backtest
+-------------
+
+An intraday algorithmic trading framework for use with quantopian.com   
+Primary use is to support multiple algorithms cooperating
+
+@license: gpl v3
+
+@author: JasonS@Novaleaf.com  https://PhantomJsCloud.com
+
+disclaimer:  I'm not a fan of python so sorry if this isn't PEP compliant.
+
+
+"""
+
+
 
 # Import the libraries we will use here
 import datetime
@@ -279,6 +301,7 @@ class FrameworkBase():
         
         this.targetedSids = [] #array of sids (ex: "SPY" if offline, 123 if online) you wish to target.  if empty, all securites returned by data are used
         this.targetedSecurities = {} #dictionary, indexed by sid. must check sec.isActive before using
+        this.allSecurities = {} #dictionary of all securities, including those not targeted
 
         if is_offline_Zipline:
             this.logger = Shims._Logger(this)
@@ -363,20 +386,24 @@ class FrameworkBase():
                 qsec = data[qsec]
             currentQSecs[sid]=qsec
             #determine new securities found in data
-            if not this.targetedSecurities.has_key(sid):
-                if len(this.targetedSids)==0 or this.targetedSids.index(sid)>=0:
-                    newQSecs[sid]=qsec
+            if not this.allSecurities.has_key(sid):
+                newQSecs[sid]=qsec
+
 
         #construct new Security objects for our newQSecs
         for sid, qsec in newQSecs.items():
             newSecurity = Security(sid,this)
             assert(not this.targetedSecurities.has_key(sid))
-            this.targetedSecurities[sid]=newSecurity
+            assert(not this.allSecurities.has_key(sid))
+            this.allSecurities[sid]=newSecurity
+            #add it to targeted collection if we need to 
+            if len(this.targetedSids)==0 or sid in this.targetedSids:
+                this.targetedSecurities[sid]=newSecurity
         newQSecs.clear()
 
 
         #update all security objects, giving a null qsec if one doesn't exist in our data dictionary
-        for sid, security in this.targetedSecurities.items():
+        for sid, security in this.allSecurities.items():
             qsec = currentQSecs.get(sid)
             security.update(qsec)
         
@@ -392,20 +419,8 @@ class FrameworkBase():
         pass
 
 #entrypoints
-def initialize(context=Shims.Context()):
-    '''initialize method used when running on quantopian'''
-    context.tradingAlgorithm = Shims._TradingAlgorithm_QuantopianShim()
-    context.tradingAlgorithm.context = context
-    context.framework = constructFramework(context,False)
-    context.framework.initialize()
 
-    pass
 
-def handle_data(context=Shims.Context(),data=pandas.DataFrame()):    
-    '''update method run every timestep on quantopian'''
-    context.framework._update_start(data)
-    
-    pass
 
 def initalize_zipline():
     '''initialize method run when using zipline'''
@@ -417,27 +432,48 @@ def initalize_zipline():
     tradingAlgorithm.run(context.framework._offlineZiplineData)
     pass
 
+def handle_data(context=Shims.Context(),data=pandas.DataFrame()):    
+    '''update method run every timestep on quantopian'''
+    if context.firstFrame:
+        #'''init on our first frame'''
+        context.firstFrame = False
+        context.tradingAlgorithm = Shims._TradingAlgorithm_QuantopianShim()
+        context.tradingAlgorithm.context = context
+        context.framework = constructFramework(context,False)
+        context.framework.initialize()
+    
+    context.framework._update_start(data)
+    
+    pass
 
+def initialize(context=Shims.Context()):
+    '''initialize method used when running on quantopian'''
+    context.firstFrame = True 
+    #if you need set universe, do it here
+    set_universe(universe.DollarVolumeUniverse(floor_percentile=99.5,ceiling_percentile=100.0))
 
-
+##############  CROSS PLATFORM USERCODE BELOW.   EDIT BELOW THIS LINE
+##############  CROSS PLATFORM USERCODE BELOW.   EDIT BELOW THIS LINE
 ##############  CROSS PLATFORM USERCODE BELOW.   EDIT BELOW THIS LINE
 
 class ExampleAlgo(FrameworkBase):
-    def initialize_loadDataOffline_DataFrames(this):
-        '''only called when offline (zipline)'''
-        # Load data
-        start = datetime.datetime(2002, 1, 4, 0, 0, 0, 0, pytz.utc)
-        end = datetime.datetime(2002, 3, 1, 0, 0, 0, 0, pytz.utc)
-        data = zipline.utils.factory.load_from_yahoo(stocks=['SPY', 'XLY'], indexes={}, start=start,
-                           end=end, adjusted=False)
-        return data
-        pass
+    #def initialize_loadDataOffline_DataFrames(this):
+    #    '''only called when offline (zipline)
+    #    note that i dropped offline zipline support due to it's differences/defects so you'll have to get it working again yourself'''
+    #    # Load data
+    #    start = datetime.datetime(2002, 1, 4, 0, 0, 0, 0, pytz.utc)
+    #    end = datetime.datetime(2002, 3, 1, 0, 0, 0, 0, pytz.utc)
+    #    data = zipline.utils.factory.load_from_yahoo(stocks=['SPY', 'XLY'], indexes={}, start=start,
+    #                       end=end, adjusted=False)
+    #    return data
+    #    pass
     def initialize_loadDataOnline_SecArray(this):
         '''only called when online (quantopian)'''
-        bla = [
+        qsecs = [
                 sid(8554), # SPY S&P 500
                 ]
-        #return bla #if we return an array of qsecs, our framework will ignore any additional securities found in data
+        #if we return an array of qsecs, our framework will ignore any additional securities found in data
+        return qsecs 
     
     def update(this, data):
         ''' order 1 share of the first security each timestep'''  
@@ -461,11 +497,10 @@ def constructFramework(context,isOffline):
     return ExampleAlgo(context,isOffline);
 
 ############## OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
+############## OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
+############## OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
+
 is_offline_Zipline = False
 if __name__ == '__main__':  
-    #import pylab
     is_offline_Zipline = True
-
-if(is_offline_Zipline):
     initalize_zipline()
-    pass
