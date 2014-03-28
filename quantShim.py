@@ -101,7 +101,7 @@ class Shims():
                 security = sid
             else:
                 security = this.context.framework.targetedSecurities[sid]
-            #log.info(security.qsec)
+            log.info("{0} ordering {1}".format(security.qsec,amount))
             order(security.qsec,amount,limit_price,stop_price)
             pass
 
@@ -199,7 +199,7 @@ class FrameStateBase:
         this.parent=parent
         this.framework = framework
 
-    def _initializeAndPrepend(this,history, data, maxHistoryFrames = None):            
+    def initializeAndPrepend(this,history, data, maxHistoryFrames = None):            
         '''inserts itself into the first slot of history and trims to max this.framework.maxHistoryFrames
         DO NOT OVERRIDE.  override .initialize() instead
         '''
@@ -218,14 +218,60 @@ class FrameStateBase:
         
 
     def initialize(this, data):
-        '''override this to hook ending of ._initializeAndPrepend()'''
+        '''override this to hook ending of .initializeAndPrepend()'''
         pass
 
-class Security:
+class Position:
+    '''
+    The position object represents a current open position, and is contained inside the positions dictionary. 
+    For example, if you had an open AAPL position, you'd access it using context.portfolio.positions[sid(24)]. 
+    The position object has the following properties:
+        amount = 0 #Integer: Whole number of shares in this position.
+        cost_basis = 0.0 #Float: The volume-weighted average price paid per share in this position.
+        last_sale_price = 0.0 #Float: Price at last sale of this security.
+        sid = 0 #Integer: The ID of the security.
+    '''
+    def __init__(this):
+        this.amount = 0 #Integer: Whole number of shares in this position.
+        this.cost_basis = 0.0 #Float: The volume-weighted average price paid per share in this position.
+        this.last_sale_price = 0.0 #Float: Price at last sale of this security.
+        this.sid = 0 #Integer: The ID of the security.
 
-    class _EventShim:
-        '''shim to provide intelisence'''
-        def __init__(this):        
+
+class PartialPosition:
+    '''allows multiple independent positions per security'''
+
+    def __init__(this, security):            
+        this.security = security
+        this.lastOrderId = 0
+        this.lastStopOrderId = 0
+        this.currentCapitalSharePercent = 0.0
+        this.currentShares = 0
+        #this is editable
+        this.targetCapitalSharePercent = 0.0
+
+    def processOrder(this):
+        this.currentCapitalSharePercent = this.targetCapitalSharePercent
+        #determine value of percent
+        targetSharesTotal = this.security.framework.context.portfolio.portfolio_value * this.currentCapitalSharePercent / this.security.state[0].close_price
+        targetSharesDelta = targetSharesTotal - this.currentShares
+        
+        this.lastOrderId = this.security.framework.tradingAlgorithm.order(this.security.sid,targetSharesDelta)            
+        this.currentShares = targetSharesTotal
+
+class Security:
+    isDebug = False
+
+    class State(FrameStateBase):
+        '''used to store state about the current frame of the simulation, and access the history'''
+        
+        def initialize(this,data):
+            this.isActive = this.parent.isActive
+            assert(this.framework.simFrame==this.parent.simFrame)
+            if not this.isActive:
+                return
+
+            #preset for proper intelisence
             this.datetime = datetime.datetime.now()
             this.open_price = 0.0
             this.close_price = 0.0
@@ -233,29 +279,37 @@ class Security:
             this.low = 0.0
             this.volume = 0
 
-    class State(FrameStateBase):
-        '''used to store state about the current frame of the simulation, and access the history'''
+            this.datetime = data[this.parent.qsec].datetime
+            this.open_price = data[this.parent.qsec].open_price
+            this.close_price = data[this.parent.qsec].close_price
+            this.high = data[this.parent.qsec].high
+            this.low = data[this.parent.qsec].low
+            this.volume = data[this.parent.qsec].volume
 
-        
-
-        def initialize(this,data):
-            this.isActive = this.parent.isActive
-            assert(this.framework.simFrame==this.parent.simFrame)
-            if not this.isActive:
-                return
-            event = this.parent.currentMarketEvents
-            this.datetime = event.datetime
-            this.open_price = event.open_price
-            this.close_price = event.close_price
-            this.high = event.high
-            this.low = event.low
-            this.volume = event.volume
             
+            this.__voters = 0
+            
+            this._voteLong = 0
+            this._voteShort = 0
+            this._voteHold = 0
+            this._voteCloseLong = 0
+            this._voteCloseShort = 0
+
+            this._voteLongAmount = 0.0
+            this._voteShortAmount = 0.0
+            this._voteHoldAmount = 0.0
+            this._voteCloseLongAmount = 0.0
+            this._voteCloseShortAmount = 0.0
+
+            #final expenditure after votes are tallied
+            this._targetOrderPercent = 0.0
+
             try:                
                 this.returns = data[this.parent.qsec].returns()
             except:
                 this.framework.logger.error("{0} unable to obtain returns()  setting returns to zero  open={1}.  close = {2}".format(this.parent.qsec, this.open_price, this.close_price))
                 this.returns = 0.0
+
 
     class QSecurity:
         '''
@@ -274,23 +328,7 @@ class Security:
             this.security_start_date = datetime.datetime(1990,1,1) #Datetime: The date when this security first started trading.
             this.security_end_date = datetime.datetime(1990,1,1) #Datetime: The date when this security stopped trading (= yesterday for securities that are trading normally, because that's the last day for which we have historical price data).
     
-    class Position:
-        '''
-        The position object represents a current open position, and is contained inside the positions dictionary. 
-        For example, if you had an open AAPL position, you'd access it using context.portfolio.positions[sid(24)]. 
-        The position object has the following properties:
-            amount = 0 #Integer: Whole number of shares in this position.
-            cost_basis = 0.0 #Float: The volume-weighted average price paid per share in this position.
-            last_sale_price = 0.0 #Float: Price at last sale of this security.
-            sid = 0 #Integer: The ID of the security.
-        '''
-        def __init__(this):
-            this.amount = 0 #Integer: Whole number of shares in this position.
-            this.cost_basis = 0.0 #Float: The volume-weighted average price paid per share in this position.
-            this.last_sale_price = 0.0 #Float: Price at last sale of this security.
-            this.sid = 0 #Integer: The ID of the security.
-
-
+    
 
     def __init__(this,sid, framework):
         this.sid = sid  
@@ -298,11 +336,19 @@ class Security:
         #this.qsec=Security.QSecurity()
         #this.qsec=None
         this.framework = framework
-        this.security_start_date = None
-        this.security_end_date = None
+        this.security_start_date = datetime.datetime.utcfromtimestamp(0)
+        this.security_end_date = datetime.datetime.utcfromtimestamp(0)
         this.simFrame = -1;
         this.state = []
-        this.currentMarketEvents = Security._EventShim()
+        this.security_start_price = 0.0
+        this.security_end_price = 0.0
+        this.partialPositions = {}
+        
+        
+    def getCurrentPosition(this):
+        if this.simFrame == -1:
+            return Position()
+        return this.framework.context.portfolio.positions[this.qsec]
 
     def update(this,qsec, data):
         '''qsec is only given when it's in scope, and it can actually change each timestep 
@@ -320,18 +366,25 @@ class Security:
         this.qsec = qsec
         if qsec:
             this.isActive = True
-            assert(qsec.sid == this.sid)
+            assert(qsec.sid == this.sid)            
+            
+            if this.security_start_price == 0.0:
+                this.security_start_price = data[this.sid].close_price
+            this.security_end_price = data[this.sid].close_price
+
             this.security_start_date = qsec.security_start_date
             this.security_end_date = qsec.security_end_date
-            this.currentMarketEvents = data[qsec]
         else:
             this.isActive = False
-            this.currentMarketEvents= None
 
         #construct new state for this frame
         nowState = Security.State(this,this.framework)
-        nowState._initializeAndPrepend(this.state, data)
+        nowState.initializeAndPrepend(this.state, data)
 
+    def update_orders_phase4(this,data):
+        '''handles processing of partial positions'''
+        for name, partialPosition in this.partialPositions.items():
+           partialPosition.processOrder()
 
 
 
@@ -537,6 +590,24 @@ class StandardTechnicalIndicators(FrameStateBase):
 
         pass
 
+class FollowMarketStrategy(FrameStateBase):
+    def initialize(this, data):
+        #partialPositions
+        this.parialPosition = this.parent.partialPositions["followMarketStrategy"]
+
+        security = this.parent
+        
+        #simple "follow market" example
+        if security.state[0].close_price < security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 < security.standardIndicators[0].mavg30:
+            this.parialPosition.targetCapitalSharePercent = 1.0
+        elif security.state[0].close_price > security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 > security.standardIndicators[0].mavg30:
+            this.parialPosition.targetCapitalSharePercent = -1.0
+        else:
+            this.parialPosition.targetCapitalSharePercent = 0.0
+
+        pass
+
+
 class ExampleAlgo(FrameworkBase):
     def initialize_loadDataOffline_DataFrames(this):
         '''only called when offline (zipline)
@@ -554,11 +625,10 @@ class ExampleAlgo(FrameworkBase):
                 sid(8554), # SPY S&P 500
                 ]
         #if we return an array of qsecs, our framework will ignore any additional securities found in data
-        #return qsecs 
+        return qsecs 
     
     def initialize_first_update(this, data):
         this.knownSecurities = {}
-
 
     def update(this, data):
         ''' order 1 share of the first security each timestep'''  
@@ -574,12 +644,10 @@ class ExampleAlgo(FrameworkBase):
             if not security.isActive:
                 continue
             activeSecurities[sid]=security
-
         
         for sid,security in activeSecurities.items():
             ##PHASE 2: update technical indicators for ALL active securities found
             this.__update_technicalIndicators(security,data)
-        
        
         for sid,security in this.targetedSecurities.items():
             #PHASE 3: update algorithms for targetedSecurities
@@ -594,27 +662,31 @@ class ExampleAlgo(FrameworkBase):
     def __initializeSecurity(this,security,data):
         '''do our framework's custom init logic on this security'''
         security.standardIndicators = []
+
+        security.followMarketStrategy = []
+        security.partialPositions["followMarketStrategy"] = PartialPosition(security)
+
         pass
 
     def __update_technicalIndicators(this,security,data):
         '''##PHASE 2: update technical indicators for ALL active securities found'''
         frameStdInd = StandardTechnicalIndicators(security,this)
-        frameStdInd._initializeAndPrepend(security.standardIndicators, data)
+        frameStdInd.initializeAndPrepend(security.standardIndicators, data)
         assert(frameStdInd == security.standardIndicators[0])
 
         pass
     def __update_algorithms(this,security,data):
         '''#PHASE 3: update algorithms for targetedSecurities'''
+
+        followMarketStrategy = FollowMarketStrategy(security,this)
+        followMarketStrategy.initializeAndPrepend(security.followMarketStrategy,data)
+
         pass
     def __update_orders(this,security,data):    
         '''##PHASE 4: process orders for targetedSecurities     '''  
-        #simple "follow market" example
-        if security.state[0].close_price < security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 < security.standardIndicators[0].mavg30:
-            this.tradingAlgorithm.order_target(security.sid,-10)
-        elif security.state[0].close_price > security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 > security.standardIndicators[0].mavg30:
-            this.tradingAlgorithm.order_target(security.sid, 10)
-        else:
-            this.tradingAlgorithm.order_target(security.sid, 0)
+
+        security.update_orders_phase4(data)
+
 ##############  CONFIGURATION BELOW
 
 def constructFramework(context,isOffline):

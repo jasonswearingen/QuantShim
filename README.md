@@ -16,7 +16,7 @@ History
  - Add Security object to provide persistant state / logic for securities
  - Add state history to security, provide easy way for things to get their own state + history of their own state.
  - add multi-phase updates, allow framework to custom init securities
-
+ - add partial positions, so that strategies can order independantly of eachother
 
 Roadmap
 =============
@@ -57,8 +57,7 @@ There are far too many differences/defects with the zipline runtime to continue 
 
 work in progress (todo)
 ========
-- add technical indicators framework
-- add algorithm framework
-- add security-algorithm pairs
+- add realistic example of multistrategy collab
+
 
 
