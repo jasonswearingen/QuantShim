@@ -190,29 +190,36 @@ class Shims():
         pass
 
 
+class FrameStateBase:
+    '''used to store state about the current frame of the simulation, and access the history'''
+    def __init__(this, parent, framework):
+        this.parent=parent
+        this.framework = framework
 
+    def _initializeAndPrepend(this,history, maxHistoryFrames = -999):            
+        if maxHistoryFrames<0:
+           maxHistoryFrames = this.framework.maxHistoryFrames
+        '''inserts itself into the first slot of history and trims to max this.framework.maxHistoryFrames'''
+        this.history = history
+        this.maxHistoryFrames = maxHistoryFrames
+        this.history.insert(0,this)
+        this.history[0:maxHistoryFrames]            
+        ##init
+        this.datetime = this.framework.get_datetime()
+        this.frame = this.framework.frame
+        this.initialize()
 
+    def initialize(this):
+        '''override this to hook ._initializeAndPrepend'''
+        pass
 
 class Security:
-    class State:
+    class State(FrameStateBase):
         '''used to store state about the current frame of the simulation, and access the history'''
-        def __init__(this, parent, framework):
-            '''inserts itself into the first slot of history and trims to max this.framework.maxHistoryFrames '''
-            this.parent=parent
-            this.framework = framework
 
-            this.isActive = parent.isActive
-
-        def initializeAndPrepend(this,history):            
-            this.history = history
-            this.history.insert(0,this)
-            this.history[0:this.framework.maxHistoryFrames]
-            
-            ##init
-            this.datetime = this.framework.get_datetime()
-            this.frame = this.framework.frame
+        def initialize(this):
+            this.isActive = this.parent.isActive
             assert(this.framework.frame==this.parent.frame)
-
 
     class QSecurity:
         '''
@@ -272,9 +279,9 @@ class Security:
 
         #construct new state for this frame
         nowState = Security.State(this,this.framework)
-        nowState.initializeAndPrepend(this.state)
+        nowState._initializeAndPrepend(this.state)
         
-
+        
         #update qsec to most recent (if any)
         this.qsec = qsec
         if qsec:
@@ -457,16 +464,16 @@ def initialize(context=Shims.Context()):
 ##############  CROSS PLATFORM USERCODE BELOW.   EDIT BELOW THIS LINE
 
 class ExampleAlgo(FrameworkBase):
-    #def initialize_loadDataOffline_DataFrames(this):
-    #    '''only called when offline (zipline)
-    #    note that i dropped offline zipline support due to it's differences/defects so you'll have to get it working again yourself'''
-    #    # Load data
-    #    start = datetime.datetime(2002, 1, 4, 0, 0, 0, 0, pytz.utc)
-    #    end = datetime.datetime(2002, 3, 1, 0, 0, 0, 0, pytz.utc)
-    #    data = zipline.utils.factory.load_from_yahoo(stocks=['SPY', 'XLY'], indexes={}, start=start,
-    #                       end=end, adjusted=False)
-    #    return data
-    #    pass
+    def initialize_loadDataOffline_DataFrames(this):
+        '''only called when offline (zipline)
+        note that i dropped offline zipline support due to it's differences/defects so you'll have to get it working again yourself'''
+        # Load data
+        start = datetime.datetime(2002, 1, 4, 0, 0, 0, 0, pytz.utc)
+        end = datetime.datetime(2002, 3, 1, 0, 0, 0, 0, pytz.utc)
+        data = zipline.utils.factory.load_from_yahoo(stocks=['SPY', 'XLY'], indexes={}, start=start,
+                           end=end, adjusted=False)
+        return data
+        pass
     def initialize_loadDataOnline_SecArray(this):
         '''only called when online (quantopian)'''
         qsecs = [
@@ -475,20 +482,51 @@ class ExampleAlgo(FrameworkBase):
         #if we return an array of qsecs, our framework will ignore any additional securities found in data
         return qsecs 
     
+    def initialize_first_update(this, data):
+        this.knownSecurities = {}
+
+
     def update(this, data):
         ''' order 1 share of the first security each timestep'''  
-        assert(this.frame>=0)
-
-        buyCount = 0
+        
+        ##PHASE 1: let framework init new securities, determine active.
+        activeSecurities = {}
         for sid,security in this.targetedSecurities.items():
+            if not this.knownSecurities.has_key(sid):
+                this.knownSecurities[sid]=security
+                #new, so do our framework's custom init logic on this security
+                this.__initializeSecurity(security,data)
+
             if not security.isActive:
                 continue
-            buyCount+=1
-            this.logger.info("buy {0} x1".format(sid));
-            this.tradingAlgorithm.order(sid,1)
+            activeSecurities[sid]=security
 
-        if buyCount <=0:
-            this.logger.info("no security found this timestep");
+        ##PHASE 2: update technical indicators
+        for sid,security in activeSecurities.items():
+            #update technical indicators
+            this.__update_technicalIndicators(security,data)
+        
+        #PHASE 3: update algorithms
+        for sid,security in activeSecurities.items():
+            #update algorithms
+            this.__update_algorithms(security,data)
+
+        ##PHASE 4: process orders            
+        for sid,security in activeSecurities.items():
+            #process orders
+            this.__update_orders(security,data)
+            
+
+    def __initializeSecurity(this,security,data):
+        '''do our framework's custom init logic on this security'''
+        pass
+    def __update_technicalIndicators(this,security,data):
+        pass
+    def __update_algorithms(this,security,data):
+        pass
+    def __update_orders(this,security,data):
+        this.logger.info("buy {0} x1".format(security.sid));
+        this.tradingAlgorithm.order(security.sid,1)
 
 ##############  CONFIGURATION BELOW
 
