@@ -23,18 +23,6 @@ import zipline
 #from zipline.version import *
 
 
-
-
-
-#global constants
-global true
-true = 1
-global false
-false = 0
-
-
-
-
 #quantopian shims
 class Shims():
     class Context():
@@ -48,8 +36,9 @@ class Shims():
 
     class _Logger():
         '''shim for exposing the same logging definitions to visualstudio intelisence'''
-        #def __init__(this):
-        #   pass    
+        def __init__(this, framework):
+            this.framework = framework;
+            pass    
 
         def error(this, message):    
             print("{0} !!ERROR!! {1}".format(this.framework.get_datetime(),message))             
@@ -86,9 +75,9 @@ class Shims():
             Returns
             An order id.
             '''
-            sec = this.context.framework.targetedSecurities[sid]
-            #this.logger.info(sec)
-            order(sec,amount,limit_price,stop_price)
+            security = this.context.framework.targetedSecurities[sid]
+            #log.info(security.qsec)
+            order(security.qsec,amount,limit_price,stop_price)
             pass
 
         def order_percent(self, sid, percent, limit_price=None, stop_price=None):
@@ -162,7 +151,7 @@ class Shims():
         '''auto-generates a context to use'''
         def initialize(this):
             #delay initialize until start of first handle-data, so our portfolio object is available            
-            #this.__isInitialized = false;          
+            #this.__isInitialized = False;          
             this.context = Shims.Context()
             this.context.tradingAlgorithm = this            
             #this.context.portfolio = this.portfolio
@@ -171,80 +160,226 @@ class Shims():
         def handle_data(this,data):      
             this.context.portfolio = this.portfolio
             #if not this.__isInitialized:
-            #    this.__isInitialized=true
+            #    this.__isInitialized=True
             #    this.context.portfolio=this.portfolio
                 
-            this.context.framework.update_timestep(data)
+            this.context.framework._update_start(data)
             pass
         pass
 
 
+
+
+
+class Security:
+    class State:
+        '''used to store state about the current frame of the simulation, and access the history'''
+        def __init__(this, parent, framework):
+            '''inserts itself into the first slot of history and trims to max this.framework.maxHistoryFrames '''
+            this.parent=parent
+            this.framework = framework
+
+            this.isActive = parent.isActive
+
+        def initializeAndPrepend(this,history):            
+            this.history = history
+            this.history.insert(0,this)
+            this.history[0:this.framework.maxHistoryFrames]
+            
+            ##init
+            this.datetime = this.framework.get_datetime()
+            this.frame = this.framework.frame
+            assert(this.framework.frame==this.parent.frame)
+
+
+    class QSecurity:
+        '''
+        Quantopian internal security object
+        If you have a reference to a security object, there are several properties that might be useful:
+            sid = 0 #Integer: The id of this security.
+            symbol = "" #String: The ticker symbol of this security.
+            security_name = "" #String: The full name of this security.
+            security_start_date = datetime.datetime() #Datetime: The date when this security first started trading.
+            security_end_date = datetime.datetime() #Datetime: The date when this security stopped trading (= yesterday for securities that are trading normally, because that's the last day for which we have historical price data).
+        '''
+        def __init__(this):
+            this.sid = 0 #Integer: The id of this security.
+            this.symbol = "" #String: The ticker symbol of this security.
+            this.security_name = "" #String: The full name of this security.
+            this.security_start_date = datetime.datetime(1990,1,1) #Datetime: The date when this security first started trading.
+            this.security_end_date = datetime.datetime(1990,1,1) #Datetime: The date when this security stopped trading (= yesterday for securities that are trading normally, because that's the last day for which we have historical price data).
+    
+    class Position:
+        '''
+        The position object represents a current open position, and is contained inside the positions dictionary. 
+        For example, if you had an open AAPL position, you'd access it using context.portfolio.positions[sid(24)]. 
+        The position object has the following properties:
+            amount = 0 #Integer: Whole number of shares in this position.
+            cost_basis = 0.0 #Float: The volume-weighted average price paid per share in this position.
+            last_sale_price = 0.0 #Float: Price at last sale of this security.
+            sid = 0 #Integer: The ID of the security.
+        '''
+        def __init__(this):
+            this.amount = 0 #Integer: Whole number of shares in this position.
+            this.cost_basis = 0.0 #Float: The volume-weighted average price paid per share in this position.
+            this.last_sale_price = 0.0 #Float: Price at last sale of this security.
+            this.sid = 0 #Integer: The ID of the security.
+
+    
+
+    def __init__(this,sid, framework):
+        this.sid = sid  
+        this.isActive = False
+        #this.qsec=Security.QSecurity()
+        #this.qsec=None
+        this.framework = framework
+        this.security_start_date = None
+        this.security_end_date = None
+        this.frame = -1;
+        this.state = []
+
+    def update(this,qsec):
+        '''qsec is only given when it's in scope, and it can actually change each timestep 
+        what it does:
+        - construct new state for this frame
+        - update qsec to most recent (if any)
+        '''
+        #update our tickcounter, mostly for debug
+        this.frame = this.framework.frame
+        assert(this.frame>=0)
+
+        #construct new state for this frame
+        nowState = Security.State(this,this.framework)
+        nowState.initializeAndPrepend(this.state)
+        
+
+        #update qsec to most recent (if any)
+        this.qsec = qsec
+        if qsec:
+            this.isActive = True
+            assert(qsec.sid == this.sid)
+            this.security_start_date = qsec.security_start_date
+            this.security_end_date = qsec.security_end_date
+        else:
+            this.isActive = False
+
+
+
+
+
 class FrameworkBase():
-    def __init__(this, context, isOffline):
+    def __init__(this, context, isOffline, maxHistoryFrames=365):
+        this.maxHistoryFrames = maxHistoryFrames
+        this.__isFirstTimestepRun = False
         this.isOffline = isOffline
         this.context = context
         this.tradingAlgorithm = Shims._TradingAlgorithm_QuantopianShim() #prepopulate to allow intelisence
         this.tradingAlgorithm = context.tradingAlgorithm
-        this.targetedSecurities = {}
-        this._targetedSecurityIds=[0]        
-        del this._targetedSecurityIds[:]
+        this.frame = -1 #the current timestep of the simulation
+        
+        this.targetedSids = [] #array of sids (ex: "SPY" if offline, 123 if online) you wish to target.  if empty, all securites returned by data are used
+        this.targetedSecurities = {} #dictionary, indexed by sid. must check sec.isActive before using
+
         if is_offline_Zipline:
-            this.logger = Shims._Logger()
-            this.logger.framework = this
+            this.logger = Shims._Logger(this)
         else:
             this.logger = log
-        
         pass
     
     def initialize(this):
         #do init here
         if this.isOffline:
             #passed to the run method
-            this._offlineZiplineData = this.abstract_loadDataOffline_DataFrames()
-            this._targetedSecurityIds = list(this._offlineZiplineData.columns.values)
+            this._offlineZiplineData = this.initialize_loadDataOffline_DataFrames()
+            #our targeted sids will be everything returned by 'data'
+            #this.targetedSids = list(this._offlineZiplineData.columns.values)
         else:
-            this._targetedSecurityIds = [sec.sid for sec in this.abstract_loadDataOnline_SecArray()]
+            targetedQSecs = this.initialize_loadDataOnline_SecArray()
+            if targetedQSecs:
+                this.targetedSids = [sec.sid for sec in targetedQSecs]
+            
             #this.tradingAlgorithm.logger.info(len(this.securityIds))
             #this.tradingAlgorithm.logger.info(this.securityIds)
         
         pass
 
-    def abstract_loadDataOffline_DataFrames(this):
+    def initialize_loadDataOffline_DataFrames(this):
         '''return a pandas dataframes of securities, ex: using the zipline.utils.factory.load_from_yahoo method
         these will be indexed in .securityId's for you to lookup in your abstract_handle_data(data)'''
         return pandas.DataFrame()
         pass
-    def abstract_loadDataOnline_SecArray(this):
+    def initialize_loadDataOnline_SecArray(this):
         '''return an array of securities, ex: [sid(123)]
-        these will be indexed in .securityId's for you to lookup in your abstract_handle_data(data)'''
+        these will be indexed in .securityId's for you to lookup in your abstract_handle_data(data)
+        return an empty array or none to target all securities found in data.  (good for using the set_universe)
+        '''
         return []
         pass
 
-    def abstract_update_timestep_handle_data(this,data=pandas.DataFrame()):
 
-        '''find the securities you loaded by .securityId.   
-        if the security isn't present in data
-        , it's temporally unavailable (not yet listed or already removed from the exchange)
-        '''
+
+    def initialize_first_update(this,data):
+        '''called the first timestep, before update'''
         pass
 
-    def update_timestep(this,data):
-        '''invoked by the tradingAlgorithm shim every update.  internally we will call abstract_update_timestep_handle_data()'''
-        this.targetedSecurities.clear()
+    def _update_start(this,data):
+        '''invoked by the tradingAlgorithm shim every update.  internally we will call abstract_update_timestep_handle_data()
+        Override this, but call the super first!!!!
+        '''
+
+
+        this.frame+=1        
+        #this.targetedSecurities.clear()
+        this.data = data
+
+
+        this.__updateSecurities(data)
+        
+
+        if not this.__isFirstTimestepRun:
+            this.__isFirstTimestepRun=True
+            this.initialize_first_update(data)
+
+        this.update(data)
+        pass
+
+    def update(this,data):
+        '''override and update your usercode here'''
+        pass
+
+    def __updateSecurities(this,data):
+        '''get all qsecs from data, then update the targetedSecurities accordingly'''
+
+        #convert our data into a dictionary
+        currentQSecs = {}
+        newQSecs = {}
         for qsec in data:
-            
             if not this.isOffline:
+                #if online, qsec is a securities object
                 sid = qsec.sid                
             else:
-                #if offline zipline, qsec is a string ex: "SPY"
+                #if offline (zipline), qsec is a string ex: "SPY"
                 sid = qsec;
                 qsec = data[qsec]
+            currentQSecs[sid]=qsec
+            #determine new securities found in data
+            if not this.targetedSecurities.has_key(sid):
+                if len(this.targetedSids)==0 or this.targetedSids.index(sid)>=0:
+                    newQSecs[sid]=qsec
 
-            if len(this._targetedSecurityIds)==0 or this._targetedSecurityIds.index(sid)>=0:
-                this.targetedSecurities[sid]=qsec
-        this.data = data
-        this.abstract_update_timestep_handle_data(data)
-    pass
+        #construct new Security objects for our newQSecs
+        for sid, qsec in newQSecs.items():
+            newSecurity = Security(sid,this)
+            assert(not this.targetedSecurities.has_key(sid))
+            this.targetedSecurities[sid]=newSecurity
+        newQSecs.clear()
+
+
+        #update all security objects, giving a null qsec if one doesn't exist in our data dictionary
+        for sid, security in this.targetedSecurities.items():
+            qsec = currentQSecs.get(sid)
+            security.update(qsec)
+        
 
     def get_datetime(this):
         if is_offline_Zipline:
@@ -261,24 +396,23 @@ def initialize(context=Shims.Context()):
     '''initialize method used when running on quantopian'''
     context.tradingAlgorithm = Shims._TradingAlgorithm_QuantopianShim()
     context.tradingAlgorithm.context = context
-    context.framework = constructFramework(context,false)
+    context.framework = constructFramework(context,False)
     context.framework.initialize()
 
     pass
 
 def handle_data(context=Shims.Context(),data=pandas.DataFrame()):    
     '''update method run every timestep on quantopian'''
-    context.framework.update_timestep(data)
+    context.framework._update_start(data)
     
     pass
 
-global constructFramework
 def initalize_zipline():
     '''initialize method run when using zipline'''
     
     tradingAlgorithm = Shims._TradingAlgorithm_ZiplineShim()
     context = tradingAlgorithm.context;
-    context.framework = constructFramework(context,true)
+    context.framework = constructFramework(context,True)
     context.framework.initialize()    
     tradingAlgorithm.run(context.framework._offlineZiplineData)
     pass
@@ -289,7 +423,7 @@ def initalize_zipline():
 ##############  CROSS PLATFORM USERCODE BELOW.   EDIT BELOW THIS LINE
 
 class ExampleAlgo(FrameworkBase):
-    def abstract_loadDataOffline_DataFrames(this):
+    def initialize_loadDataOffline_DataFrames(this):
         '''only called when offline (zipline)'''
         # Load data
         start = datetime.datetime(2002, 1, 4, 0, 0, 0, 0, pytz.utc)
@@ -298,23 +432,27 @@ class ExampleAlgo(FrameworkBase):
                            end=end, adjusted=False)
         return data
         pass
-    def abstract_loadDataOnline_SecArray(this):
+    def initialize_loadDataOnline_SecArray(this):
         '''only called when online (quantopian)'''
-        return [
+        bla = [
                 sid(8554), # SPY S&P 500
                 ]
-        
-        pass
+        #return bla #if we return an array of qsecs, our framework will ignore any additional securities found in data
+    
+    def update(this, data):
+        ''' order 1 share of the first security each timestep'''  
+        assert(this.frame>=0)
 
-    def abstract_update_timestep_handle_data(this, data = pandas.DataFrame()):
-        ''' order 1 share of the first security each timestep'''
-        if(len(this._targetedSecurityIds)>0):            
-            this.logger.info("buy {0} x1".format(this._targetedSecurityIds[0]));
-            this.tradingAlgorithm.order(this._targetedSecurityIds[0],1)
-            pass
-        else:
+        buyCount = 0
+        for sid,security in this.targetedSecurities.items():
+            if not security.isActive:
+                continue
+            buyCount+=1
+            this.logger.info("buy {0} x1".format(sid));
+            this.tradingAlgorithm.order(sid,1)
+
+        if buyCount <=0:
             this.logger.info("no security found this timestep");
-    pass  
 
 ##############  CONFIGURATION BELOW
 
@@ -323,10 +461,10 @@ def constructFramework(context,isOffline):
     return ExampleAlgo(context,isOffline);
 
 ############## OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
-is_offline_Zipline = false
+is_offline_Zipline = False
 if __name__ == '__main__':  
     #import pylab
-    is_offline_Zipline = true
+    is_offline_Zipline = True
 
 if(is_offline_Zipline):
     initalize_zipline()
