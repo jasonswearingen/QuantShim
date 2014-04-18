@@ -133,7 +133,7 @@ class Shims():
                 security = sid
             else:
                 security = this.context.framework.targetedSecurities[sid]
-            log.info("{0} ordering {1}".format(security.qsec,amount))
+            #log.info("{0} ordering {1}".format(security.qsec,amount))
             order(security.qsec,amount,limit_price,stop_price)
             pass
 
@@ -271,14 +271,16 @@ class Position:
         this.sid = 0 #Integer: The ID of the security.
 
 class PartialPosition:
-    '''allows multiple independent positions per security'''
+    '''allows multiple independent positions per security, 
+    each using a fixed percentage of the current portfolio value'''
 
-    def __init__(this, security):            
+    def __init__(this, security, strategyName):            
         this.security = security
+        this.strategyName = strategyName
         this.lastOrderId = 0
         this.lastStopOrderId = 0
         this.currentCapitalSharePercent = 0.0
-        this.currentShares = 0.0
+        this.currentShares = 0
         #this is editable
         this.targetCapitalSharePercent = 0.0
 
@@ -290,19 +292,17 @@ class PartialPosition:
 
         #determine value of percent
         targetSharesValue = this.security.framework.context.portfolio.portfolio_value * this.currentCapitalSharePercent
-        targetSharesTotal = targetSharesValue / this.security.state[0].close_price
+        targetSharesTotal = int(math.copysign(math.floor(abs(targetSharesValue / this.security.state[0].close_price)),targetSharesValue))
         
         targetSharesDelta = targetSharesTotal - this.currentShares
 
-        if targetSharesTotal == 0.0:
-            if targetSharesDelta == 0:
+        if targetSharesTotal != 0:
+            if targetSharesDelta / (targetSharesTotal * 1.0) < rebalanceThreshholdPercent:
+                #our position change was too small so we skip rebalancing
                 return
-        elif targetSharesDelta / targetSharesTotal < rebalanceThreshholdPercent:
-            #our position change was too small so we skip rebalancing
-            return
 
-        if(abs(targetSharesDelta) >= 1.0): #can not perform an order on less than 1 share 
-                       
+        if(abs(targetSharesDelta) >= 1): #can not perform an order on less than 1 share 
+            this.security.framework.logger.info("{0} order {1} : {2} + {3} => {4} shares".format(this.strategyName,this.security.qsec.symbol, this.currentShares, targetSharesDelta, targetSharesTotal ))          
             this.lastOrderId = this.security.framework.tradingAlgorithm.order(this.security.sid,targetSharesDelta)
             this.currentShares = targetSharesTotal
 
@@ -792,11 +792,11 @@ class ExampleAlgo(FrameworkBase):
         '''do our framework's custom init logic on this security'''
         security.standardIndicators = []
         
-        security.followMarketStrategy = []
-        security.partialPositions["followMarketStrategy"] = PartialPosition(security)
+        security.followMarketStrategy = [] #history for tthis strategy
+        security.partialPositions["followMarketStrategy"] = PartialPosition(security, "followMarketStrategy") 
 
-        security.followPriorDayStrategy = []
-        security.partialPositions["followPriorDayStrategy"] = PartialPosition(security)
+        security.followPriorDayStrategy = [] #history for tthis strategy
+        security.partialPositions["followPriorDayStrategy"] = PartialPosition(security, "followPriorDayStrategy")
 
         pass
 

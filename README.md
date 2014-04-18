@@ -19,7 +19,8 @@ History
  - Add state history to security, provide easy way for things to get their own state + history of their own state.
  - add multi-phase updates, allow framework to custom init securities
  - add partial positions, so that strategies can order independantly of eachother
-
+- v1.0.2
+ - add realistic example of multistrategy collab (followMarketStrategy and followPriorDayStrategy operating at the same time)
 Roadmap
 =============
 - Add logic for multi-algorithm and multi-security collaboritive trading.
@@ -59,7 +60,7 @@ There are far too many differences/defects with the zipline runtime to continue 
 
 work in progress (todo)
 ========
-- add realistic example of multistrategy collab
+
 
 
 
