@@ -68,7 +68,7 @@ class WorstSpreadSlippage(slippage.SlippageModel):
             spread = trade_bar.high - trade_bar.close_price
         
         #log.info(price)        
-        log.info("{4} ORDER_COMMITTED: {0} shares {1} @ {2} ({3:.2f})    o={5} h={6} l={7} c={8}"
+        log.info("{4} ORDER_COMMITTED: {0} shares {1} @ {2} \n\t o={5} h={6} l={7} c={8}  \t (WorstSpreadSlippage = {3:.2f}/share)"
                  .format(order.amount,trade_bar.sid.symbol,price,spread,get_datetime(),trade_bar.open_price, trade_bar.high, trade_bar.low, trade_bar.close_price))
         
         return slippage.create_transaction(
@@ -810,9 +810,8 @@ class ExampleAlgo(FrameworkBase):
     def __update_algorithms(this,security,data):
         '''#PHASE 3: update algorithms for targetedSecurities'''
         
-        #followMarketStrategy = FollowMarketStrategy(security,this)
-        #followMarketStrategy.initializeAndPrepend(security.followMarketStrategy,data)
-
+        followMarketStrategy = FollowMarketStrategy(security,this)
+        followMarketStrategy.initializeAndPrepend(security.followMarketStrategy,data)
         
         followPriorDayStrategy = FollowPriorDayStrategy(security,this)
         followPriorDayStrategy.initializeAndPrepend(security.followPriorDayStrategy,data)
