@@ -46,6 +46,38 @@ import zipline
 is_offline_Zipline = False
 
 #quantopian shims
+
+class WorstSpreadSlippage(slippage.SlippageModel):
+    '''will trade at the worst value of the order minute.  high if long, low if short. 
+    
+    only meant for intraday use'''
+    def __init__(self):
+        #this.volume_limit = volume_limit
+        pass
+    def process_order(this,trade_bar,order):
+        #log.info(trade_bar)
+        #log.info(order)
+        
+        #tradeVolume = trade_bar.volume
+        
+        if order.amount < 0:
+            price = trade_bar.low
+            spread = trade_bar.close_price - trade_bar.low
+        else:
+            price = trade_bar.high
+            spread = trade_bar.high - trade_bar.close_price
+        
+        #log.info(price)        
+        log.info("{4} ORDER_COMMITTED: {0} shares {1} @ {2} ({3:.2f})    o={5} h={6} l={7} c={8}"
+                 .format(order.amount,trade_bar.sid.symbol,price,spread,get_datetime(),trade_bar.open_price, trade_bar.high, trade_bar.low, trade_bar.close_price))
+        
+        return slippage.create_transaction(
+                                           trade_bar,
+                                           order,
+                                           price,
+                                           order.amount
+                                           )
+
 class Shims():
     class Context():
         def __init__(this , portfolio=zipline.protocol.Portfolio()): #, tradingAlgorithm = zipline.TradingAlgorithm()):
@@ -269,7 +301,8 @@ class PartialPosition:
             #our position change was too small so we skip rebalancing
             return
 
-        if(abs(targetSharesDelta) >= 1.0): #can not perform an order on less than 1 share            
+        if(abs(targetSharesDelta) >= 1.0): #can not perform an order on less than 1 share 
+                       
             this.lastOrderId = this.security.framework.tradingAlgorithm.order(this.security.sid,targetSharesDelta)
             this.currentShares = targetSharesTotal
 
@@ -598,13 +631,13 @@ def initialize(context=Shims.Context()):
     ########## COMMISSION
     #use top to decrease uncertainty when testing algorithms
     #set_commission(commission.PerShare(cost=0.0))
-    set_commission(commission.PerShare(cost=0.005, min_trade_cost=1.00))
+    set_commission(commission.PerShare(cost=0.005, min_trade_cost=1.00)) #IB fixed commission model
     
     ########## SLIPPAGE
     #use top to decrease uncertainty when testing algorithms
     #set_slippage(slippage.FixedSlippage(spread=0.00))
-    set_slippage(slippage.FixedSlippage(spread=0.01))  
-    #set_slippage(TradeAtTheOpenSlippageModel(0.01))
+    #set_slippage(slippage.FixedSlippage(spread=0.01))  
+    set_slippage(WorstSpreadSlippage())
 
 ##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
 ##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
@@ -753,7 +786,7 @@ class ExampleAlgo(FrameworkBase):
                 continue
             ##PHASE 4: process orders for targetedSecurities
             this.__update_orders(security,data)
-            
+        record(port_value = this.context.portfolio.portfolio_value, pos_value = this.context.portfolio.positions_value , cash = this.context.portfolio.cash)
 
     def __initializeSecurity(this,security,data):
         '''do our framework's custom init logic on this security'''
@@ -777,8 +810,8 @@ class ExampleAlgo(FrameworkBase):
     def __update_algorithms(this,security,data):
         '''#PHASE 3: update algorithms for targetedSecurities'''
         
-        followMarketStrategy = FollowMarketStrategy(security,this)
-        followMarketStrategy.initializeAndPrepend(security.followMarketStrategy,data)
+        #followMarketStrategy = FollowMarketStrategy(security,this)
+        #followMarketStrategy.initializeAndPrepend(security.followMarketStrategy,data)
 
         
         followPriorDayStrategy = FollowPriorDayStrategy(security,this)
