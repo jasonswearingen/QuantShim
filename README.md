@@ -5,8 +5,10 @@ a python framework for trading financial instruments algorithmicly via quantopia
 
 Why
 ===
-I hate python, but it's the defacto standard for open-source quantitative trading.  
-So I wanted a codebase that can use Python Tools for Visual Studio's intelisence.  So that's why I made this.
+- I want a R&D platform to implement studies and synthetic stocks easily, AND
+- I wanted a codebase that can use Python Tools for Visual Studio's intelisence.  
+ - So that's why I made this.
+
 
 History
 ======

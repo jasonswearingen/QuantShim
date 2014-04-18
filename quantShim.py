@@ -31,26 +31,26 @@ import scipy
 import scipy.stats
 import zipline
 
-#from zipline import *  
-#from zipline.algorithm import *  
-##from zipline.api import *  
-#from zipline.data import *  
-#from zipline.errors import *  
-#from zipline.finance import *  
-#from zipline.gens import *  
-#from zipline.protocol import *  
-#from zipline.sources import *  
-#from zipline.transforms import *  
-#from zipline.utils import *  
+#from zipline import *
+#from zipline.algorithm import *
+##from zipline.api import *
+#from zipline.data import *
+#from zipline.errors import *
+#from zipline.finance import *
+#from zipline.gens import *
+#from zipline.protocol import *
+#from zipline.sources import *
+#from zipline.transforms import *
+#from zipline.utils import *
 #from zipline.version import *
-
+is_offline_Zipline = False
 
 #quantopian shims
 class Shims():
     class Context():
-        def __init__(this , portfolio = zipline.protocol.Portfolio()): #, tradingAlgorithm = zipline.TradingAlgorithm()):
+        def __init__(this , portfolio=zipline.protocol.Portfolio()): #, tradingAlgorithm = zipline.TradingAlgorithm()):
             this.portfolio = portfolio
-            #this.tradingAlgorithm = tradingAlgorithm        
+            #this.tradingAlgorithm = tradingAlgorithm
             pass
         pass
 
@@ -59,7 +59,7 @@ class Shims():
     class _Logger():
         '''shim for exposing the same logging definitions to visualstudio intelisence'''
         def __init__(this, framework):
-            this.framework = framework;
+            this.framework = framework
             pass    
 
         def error(this, message):    
@@ -82,7 +82,7 @@ class Shims():
         '''shim of zipline.TradingAlgorithm for use on quantopian '''
         def __init__(this):
             #this.logger = Shims._Logger()
-            #this.logger = log            
+            #this.logger = log
             pass
         
 
@@ -175,8 +175,9 @@ class Shims():
     class _TradingAlgorithm_ZiplineShim(zipline.TradingAlgorithm):
         '''auto-generates a context to use'''
         def initialize(this):
-            #delay initialize until start of first handle-data, so our portfolio object is available            
-            #this.__isInitialized = False;          
+            #delay initialize until start of first handle-data, so our
+            #portfolio object is available
+            #this.__isInitialized = False;
             this.context = Shims.Context()
             this.context.tradingAlgorithm = this            
             #this.context.portfolio = this.portfolio
@@ -196,10 +197,10 @@ class Shims():
 class FrameStateBase:
     '''used to store state about the current frame of the simulation, and access the history'''
     def __init__(this, parent, framework):
-        this.parent=parent
+        this.parent = parent
         this.framework = framework
 
-    def initializeAndPrepend(this,history, data, maxHistoryFrames = None):            
+    def initializeAndPrepend(this,history, data, maxHistoryFrames=None):            
         '''inserts itself into the first slot of history and trims to max this.framework.maxHistoryFrames
         DO NOT OVERRIDE.  override .initialize() instead
         '''
@@ -237,7 +238,6 @@ class Position:
         this.last_sale_price = 0.0 #Float: Price at last sale of this security.
         this.sid = 0 #Integer: The ID of the security.
 
-
 class PartialPosition:
     '''allows multiple independent positions per security'''
 
@@ -246,18 +246,32 @@ class PartialPosition:
         this.lastOrderId = 0
         this.lastStopOrderId = 0
         this.currentCapitalSharePercent = 0.0
-        this.currentShares = 0
+        this.currentShares = 0.0
         #this is editable
         this.targetCapitalSharePercent = 0.0
 
-    def processOrder(this):
-        this.currentCapitalSharePercent = this.targetCapitalSharePercent
+    def processOrder(this, rebalanceThreshholdPercent=0.05):
+        ''' set rebalanceThreshholdPercent to zero (0.0) to cause the position to readjust even if the targetPercentage doesn't change.   this is useful for reinvesting divideds / etc
+        but is set to 0.02 (2 percent) so we don't spam orders '''
+
+        this.currentCapitalSharePercent = this.targetCapitalSharePercent       
+
         #determine value of percent
-        targetSharesTotal = this.security.framework.context.portfolio.portfolio_value * this.currentCapitalSharePercent / this.security.state[0].close_price
-        targetSharesDelta = targetSharesTotal - this.currentShares
+        targetSharesValue = this.security.framework.context.portfolio.portfolio_value * this.currentCapitalSharePercent
+        targetSharesTotal = targetSharesValue / this.security.state[0].close_price
         
-        this.lastOrderId = this.security.framework.tradingAlgorithm.order(this.security.sid,targetSharesDelta)            
-        this.currentShares = targetSharesTotal
+        targetSharesDelta = targetSharesTotal - this.currentShares
+
+        if targetSharesTotal == 0.0:
+            if targetSharesDelta == 0:
+                return
+        elif targetSharesDelta / targetSharesTotal < rebalanceThreshholdPercent:
+            #our position change was too small so we skip rebalancing
+            return
+
+        if(abs(targetSharesDelta) >= 1.0): #can not perform an order on less than 1 share            
+            this.lastOrderId = this.security.framework.tradingAlgorithm.order(this.security.sid,targetSharesDelta)
+            this.currentShares = targetSharesTotal
 
 class Security:
     isDebug = False
@@ -267,7 +281,7 @@ class Security:
         
         def initialize(this,data):
             this.isActive = this.parent.isActive
-            assert(this.framework.simFrame==this.parent.simFrame)
+            assert(this.framework.simFrame == this.parent.simFrame)
             if not this.isActive:
                 return
 
@@ -326,7 +340,9 @@ class Security:
             this.symbol = "" #String: The ticker symbol of this security.
             this.security_name = "" #String: The full name of this security.
             this.security_start_date = datetime.datetime(1990,1,1) #Datetime: The date when this security first started trading.
-            this.security_end_date = datetime.datetime(1990,1,1) #Datetime: The date when this security stopped trading (= yesterday for securities that are trading normally, because that's the last day for which we have historical price data).
+            this.security_end_date = datetime.datetime(1990,1,1) #Datetime: The date when this security stopped trading (= yesterday for
+                                                                 #securities that are trading normally, because that's the last day for which
+                                                                 #we have historical price data).
     
     
 
@@ -338,11 +354,13 @@ class Security:
         this.framework = framework
         this.security_start_date = datetime.datetime.utcfromtimestamp(0)
         this.security_end_date = datetime.datetime.utcfromtimestamp(0)
-        this.simFrame = -1;
+        this.simFrame = -1
         this.state = []
         this.security_start_price = 0.0
         this.security_end_price = 0.0
         this.partialPositions = {}
+        this.daily_open_price = [0.0]
+        this.daily_close_price = [0.0]
         
         
     def getCurrentPosition(this):
@@ -358,7 +376,7 @@ class Security:
         '''
         #update our tickcounter, mostly for debug
         this.simFrame = this.framework.simFrame
-        assert(this.simFrame>=0)
+        assert(this.simFrame >= 0)
 
         
         
@@ -380,6 +398,15 @@ class Security:
         #construct new state for this frame
         nowState = Security.State(this,this.framework)
         nowState.initializeAndPrepend(this.state, data)
+        try:
+            this.daily_close_price = this.framework.daily_close_price[this.qsec]
+            this.daily_open_price = this.framework.daily_open_price[this.qsec]
+        except:
+            this.daily_close_price = []
+            this.daily_open_price = []
+
+        if len(this.daily_close_price) == 0 or len(this.daily_open_price) == 0:
+            this.isActive = False
 
     def update_orders_phase4(this,data):
         '''handles processing of partial positions'''
@@ -398,9 +425,13 @@ class FrameworkBase():
         this.tradingAlgorithm = context.tradingAlgorithm
         this.simFrame = -1 #the current timestep of the simulation
         
-        this.targetedSids = [] #array of sids (ex: "SPY" if offline, 123 if online) you wish to target.  if empty, all securites returned by data are used
-        this.targetedSecurities = {} #dictionary, indexed by sid. must check sec.isActive before using
+        this.targetedSids = [] #array of sids (ex: "SPY" if offline, 123 if online) you wish to target.  if
+                               #empty, all securites returned by data are used
+        this.targetedSecurities = {} #dictionary, indexed by sid.  must check sec.isActive before using
         this.allSecurities = {} #dictionary of all securities, including those not targeted
+
+        this.thisFrameDay = 0
+        this.lastFrameDay = 0
 
         if is_offline_Zipline:
             this.logger = Shims._Logger(this)
@@ -422,7 +453,12 @@ class FrameworkBase():
             
             #this.tradingAlgorithm.logger.info(len(this.securityIds))
             #this.tradingAlgorithm.logger.info(this.securityIds)
-        
+
+        this.init_internal()
+        pass
+
+    def init_internal(this):
+        '''override this to do your init'''
         pass
 
     def initialize_loadDataOffline_DataFrames(this):
@@ -449,17 +485,22 @@ class FrameworkBase():
         Override this, but call the super first!!!!
         '''
 
-
+        #frame updates
         this.simFrame+=1        
+        
+        this.lastFrameDay = this.thisFrameDay
+        this.thisFrameDay = this.get_datetime().day
+
         #this.targetedSecurities.clear()
         this.data = data
+
 
 
         this.__updateSecurities(data)
         
 
         if not this.__isFirstTimestepRun:
-            this.__isFirstTimestepRun=True
+            this.__isFirstTimestepRun = True
             this.initialize_first_update(data)
 
         this.update(data)
@@ -481,12 +522,12 @@ class FrameworkBase():
                 sid = qsec.sid                
             else:
                 #if offline (zipline), qsec is a string ex: "SPY"
-                sid = qsec;
+                sid = qsec
                 qsec = data[qsec]
-            currentQSecs[sid]=qsec
+            currentQSecs[sid] = qsec
             #determine new securities found in data
             if not this.allSecurities.has_key(sid):
-                newQSecs[sid]=qsec
+                newQSecs[sid] = qsec
 
 
         #construct new Security objects for our newQSecs
@@ -494,14 +535,15 @@ class FrameworkBase():
             newSecurity = Security(sid,this)
             assert(not this.targetedSecurities.has_key(sid))
             assert(not this.allSecurities.has_key(sid))
-            this.allSecurities[sid]=newSecurity
-            #add it to targeted collection if we need to 
-            if len(this.targetedSids)==0 or sid in this.targetedSids:
-                this.targetedSecurities[sid]=newSecurity
+            this.allSecurities[sid] = newSecurity
+            #add it to targeted collection if we need to
+            if len(this.targetedSids) == 0 or sid in this.targetedSids:
+                this.targetedSecurities[sid] = newSecurity
         newQSecs.clear()
 
 
-        #update all security objects, giving a null qsec if one doesn't exist in our data dictionary
+        #update all security objects, giving a null qsec if one doesn't exist
+        #in our data dictionary
         for sid, security in this.allSecurities.items():
             qsec = currentQSecs.get(sid)
             security.update(qsec, data)
@@ -509,7 +551,7 @@ class FrameworkBase():
 
     def get_datetime(this):
         if is_offline_Zipline:
-            if len(this.targetedSecurities)==0:
+            if len(this.targetedSecurities) == 0:
                 return datetime.datetime.fromtimestamp(0,pytz.UTC)
             else:
                 return this.targetedSecurities.values()[0].datetime
@@ -520,12 +562,11 @@ class FrameworkBase():
 #entrypoints
 
 
-
 def initalize_zipline():
     '''initialize method run when using zipline'''
     
     tradingAlgorithm = Shims._TradingAlgorithm_ZiplineShim()
-    context = tradingAlgorithm.context;
+    context = tradingAlgorithm.context
     context.framework = constructFramework(context,True)
     context.framework.initialize()    
     tradingAlgorithm.run(context.framework._offlineZiplineData)
@@ -548,13 +589,26 @@ def handle_data(context=Shims.Context(),data=pandas.DataFrame()):
 def initialize(context=Shims.Context()):
     '''initialize method used when running on quantopian'''
     context.firstFrame = True 
-    #if you need set universe, do it here
-    set_universe(universe.DollarVolumeUniverse(floor_percentile=99.5,ceiling_percentile=100.0))
 
-##############  CROSS PLATFORM USERCODE BELOW.   EDIT BELOW THIS LINE
-##############  CROSS PLATFORM USERCODE BELOW.   EDIT BELOW THIS LINE
-##############  CROSS PLATFORM USERCODE BELOW.   EDIT BELOW THIS LINE
+    ########## SET UNIVERSE
+    #if you need set universe, do it here (note that doing this slows the algo
+    #considerably, seems frozen)
+    #set_universe(universe.DollarVolumeUniverse(floor_percentile=99.5,ceiling_percentile=100.0))
 
+    ########## COMMISSION
+    #use top to decrease uncertainty when testing algorithms
+    #set_commission(commission.PerShare(cost=0.0))
+    set_commission(commission.PerShare(cost=0.005, min_trade_cost=1.00))
+    
+    ########## SLIPPAGE
+    #use top to decrease uncertainty when testing algorithms
+    #set_slippage(slippage.FixedSlippage(spread=0.00))
+    set_slippage(slippage.FixedSlippage(spread=0.01))  
+    #set_slippage(TradeAtTheOpenSlippageModel(0.01))
+
+##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
+##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
+##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
 class StandardTechnicalIndicators(FrameStateBase):
 
     def initialize(this, data):
@@ -598,6 +652,7 @@ class FollowMarketStrategy(FrameStateBase):
         security = this.parent
         
         #simple "follow market" example
+        
         if security.state[0].close_price < security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 < security.standardIndicators[0].mavg30:
             this.parialPosition.targetCapitalSharePercent = 1.0
         elif security.state[0].close_price > security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 > security.standardIndicators[0].mavg30:
@@ -607,8 +662,36 @@ class FollowMarketStrategy(FrameStateBase):
 
         pass
 
+class FollowPriorDayStrategy(FrameStateBase):
+    def initialize(this, data):
+        #partialPositions
+        this.parialPosition = this.parent.partialPositions["followPriorDayStrategy"]
+
+        security = this.parent
+        
+        if len(security.daily_close_price) < 2:
+            this.framework.logger.warn("security has invalid days {0}".format(security.qsec))
+            return
+
+        #simple "follow prior day" example
+        wasYesterdayUp = security.daily_close_price[-1] > security.daily_close_price[-2]
+        if wasYesterdayUp:
+            #long
+            this.parialPosition.targetCapitalSharePercent = 1.0
+        else:
+            #short
+            this.parialPosition.targetCapitalSharePercent = -1.0
+        pass
+
 
 class ExampleAlgo(FrameworkBase):
+
+    def init_internal(this):
+        #for storing quantopian history
+        this.daily_close_price = pandas.DataFrame()
+        this.daily_open_price = pandas.DataFrame()
+        pass
+
     def initialize_loadDataOffline_DataFrames(this):
         '''only called when offline (zipline)
         note that i dropped offline zipline support due to it's differences/defects so you'll have to get it working again yourself'''
@@ -621,10 +704,11 @@ class ExampleAlgo(FrameworkBase):
         pass
     def initialize_loadDataOnline_SecArray(this):
         '''only called when online (quantopian)'''
-        qsecs = [
-                sid(8554), # SPY S&P 500
+        qsecs = [#sid(8554), # SPY S&P 500
+                sid(38533), # UPRO ProShares UltraPro S&P500 (3x) (2010)
                 ]
-        #if we return an array of qsecs, our framework will ignore any additional securities found in data
+        #if we return an array of qsecs, our framework will ignore any
+        #additional securities found in data
         return qsecs 
     
     def initialize_first_update(this, data):
@@ -634,37 +718,52 @@ class ExampleAlgo(FrameworkBase):
         ''' order 1 share of the first security each timestep'''  
         
         ##PHASE 1: let framework init new securities, determine active.
+
+        #start by updating our history
+        if(this.thisFrameDay != this.lastFrameDay):
+            #only update this once per day, hopefully improving performance...
+            this.daily_close_price = history(bar_count=200, frequency='1d', field='close_price')
+            this.daily_open_price = history(bar_count=200, frequency='1d', field='open_price')
+
         activeSecurities = {}
-        for sid,security in this.targetedSecurities.items():
+        for sid,security in this.allSecurities.items():
             if not this.knownSecurities.has_key(sid):
-                this.knownSecurities[sid]=security
+                this.knownSecurities[sid] = security
                 #new, so do our framework's custom init logic on this security
                 this.__initializeSecurity(security,data)
 
             if not security.isActive:
                 continue
-            activeSecurities[sid]=security
+            activeSecurities[sid] = security
         
         for sid,security in activeSecurities.items():
-            ##PHASE 2: update technical indicators for ALL active securities found
+            ##PHASE 2: update technical indicators for ALL active securities (targeted or not)
+            ##found
             this.__update_technicalIndicators(security,data)
        
         for sid,security in this.targetedSecurities.items():
+            if not security.isActive:
+                continue
             #PHASE 3: update algorithms for targetedSecurities
             this.__update_algorithms(security,data)
 
            
         for sid,security in this.targetedSecurities.items():
-            ##PHASE 4: process orders for targetedSecurities     
+            if not security.isActive:
+                continue
+            ##PHASE 4: process orders for targetedSecurities
             this.__update_orders(security,data)
             
 
     def __initializeSecurity(this,security,data):
         '''do our framework's custom init logic on this security'''
         security.standardIndicators = []
-
+        
         security.followMarketStrategy = []
         security.partialPositions["followMarketStrategy"] = PartialPosition(security)
+
+        security.followPriorDayStrategy = []
+        security.partialPositions["followPriorDayStrategy"] = PartialPosition(security)
 
         pass
 
@@ -677,9 +776,13 @@ class ExampleAlgo(FrameworkBase):
         pass
     def __update_algorithms(this,security,data):
         '''#PHASE 3: update algorithms for targetedSecurities'''
-
+        
         followMarketStrategy = FollowMarketStrategy(security,this)
         followMarketStrategy.initializeAndPrepend(security.followMarketStrategy,data)
+
+        
+        followPriorDayStrategy = FollowPriorDayStrategy(security,this)
+        followPriorDayStrategy.initializeAndPrepend(security.followPriorDayStrategy,data)
 
         pass
     def __update_orders(this,security,data):    
@@ -688,16 +791,11 @@ class ExampleAlgo(FrameworkBase):
         security.update_orders_phase4(data)
 
 ##############  CONFIGURATION BELOW
-
 def constructFramework(context,isOffline):
     '''factory method to return your custom framework/trading algo'''
-    return ExampleAlgo(context,isOffline);
+    return ExampleAlgo(context,isOffline)
 
 ############## OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
-############## OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
-############## OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
-
-is_offline_Zipline = False
 if __name__ == '__main__':  
     is_offline_Zipline = True
     initalize_zipline() #obsolete, this framework doesn't work with zipline anymore
