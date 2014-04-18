@@ -500,7 +500,7 @@ class FrameworkBase():
         for sid, qsec in newQSecs.items():            
             assert(not this.allSecurities.has_key(sid),"frameworkBase.updateSecurities key does not exist")
 
-            this.allSecurities[sid] = this.GetOrCreateSecurity(sid, qsec, data)
+            this.allSecurities[sid] = this.getOrCreateSecurity(sid, qsec)
 
         newQSecs.clear()
 
@@ -521,22 +521,32 @@ class FrameworkBase():
 
         pass
 
-    def _initializeSecurity(this,security,data):
+    def _initializeSecurity(this,security):
         '''override to do custom init logic on each security. 
         if you wish to use your own security, return it (it will replace the existing)'''
         pass       
              
-    #def GetOrCreateSecuritySecurities(this,qsecArray):
-    #    '''pass in an array of quantopian sec (ex:  [sid(24),sid(3113)]) 
-    #    and returns an array of unique security objects wrapping them.   duplicate sids are ignored'''
-    #    securities = {}
-    #    for qsec in qsecArray:
-    #        sid = qsec.sid
-    #        securities[sid] = this.GetOrCreateSecurity(qsec)
-    #        pass
-    #    return securities.values()
-    #    pass
-    def GetOrCreateSecurity(this, sid, qsec, data):
+    def getOrCreateSecurities(this,qsecArray):
+        '''pass in an array of quantopian sid/sec tuples  (ex:  [(24,sid(24)),(3113,sid(3113))]) 
+        and returns an array of unique security objects wrapping them.   duplicate sids are ignored'''
+
+        try:
+            securities = {}
+            if not qsecArray:
+                return securities
+
+            
+            for sid, qsec in qsecArray:
+                #sid = qsec.sid
+                securities[sid] = this.getOrCreateSecurity(sid,qsec)
+                pass
+            return securities.values()
+        except:
+            log.error("FrameworkBase.GetOrCreateSecuritySecurities() error")
+            return {}
+        pass
+
+    def getOrCreateSecurity(this, sid, qsec):
         '''pass in a quantopian sec (ex:  sid(24)) and returns our security object wrapping it
         if the security object
         '''
@@ -548,7 +558,7 @@ class FrameworkBase():
         #does not exist, have to create
         newSecurity = Security(sid,this)
         #new, so do our framework's custom init logic on this security
-        maybeNewSec = this._initializeSecurity(newSecurity,data)
+        maybeNewSec = this._initializeSecurity(newSecurity)
         if maybeNewSec is not None:
             #framework replaced newSec with a different sec
             newSecurity = maybeNewSec
@@ -724,17 +734,29 @@ class StandardTechnicalIndicators(FrameHistory):
 
 class ExampleAlgo(FrameworkBase):
 
-    #def init_internal(this):
-    #    pass
+    def init_internal(this):
+        pass
 
 
-    #def initialize_first_update(this, data):
-    #    pass
+    def initialize_first_update(this, data):
+        pass
+
+    def _initializeSecurity(this,security):
+        '''do our framework's custom init logic on this security'''
+        #attach standard technical indicators to our security
+        security.standardIndicators = StandardTechnicalIndicators(security,this)
+        
+        #security.followMarketStrategy = [] #history for tthis strategy
+        #security.partialPositions["followMarketStrategy"] = PartialPosition(security, "followMarketStrategy") 
+
+        #security.followPriorDayStrategy = [] #history for tthis strategy
+        #security.partialPositions["followPriorDayStrategy"] = PartialPosition(security, "followPriorDayStrategy")
+
+        pass
 
     def update(this, data):
         ##PHASE 1: do any housekeeping during updates here
         #no-op
-        return
 
         ##PHASE 2: update technical indicators for ALL active securities (targeted or not)
         for sid,security in this.activeSecurities.items():
@@ -755,17 +777,6 @@ class ExampleAlgo(FrameworkBase):
         #    this.__update_orders(security,data)
         #record(port_value = this.context.portfolio.portfolio_value, pos_value = this.context.portfolio.positions_value , cash = this.context.portfolio.cash)
 
-    def _initializeSecurity(this,security,data):
-        '''do our framework's custom init logic on this security'''
-        security.standardIndicators = StandardTechnicalIndicators(security,this)
-        
-        #security.followMarketStrategy = [] #history for tthis strategy
-        #security.partialPositions["followMarketStrategy"] = PartialPosition(security, "followMarketStrategy") 
-
-        #security.followPriorDayStrategy = [] #history for tthis strategy
-        #security.partialPositions["followPriorDayStrategy"] = PartialPosition(security, "followPriorDayStrategy")
-
-        pass
 
     def __update_technicalIndicators(this,security,data):
         '''##PHASE 2: update technical indicators for ALL active securities found'''
@@ -800,6 +811,8 @@ class Study:
         pass
     def update_end(this,data):
         pass
+
+
 
 ##############  CONFIGURATION BELOW
 def constructFramework(context,isOffline):
