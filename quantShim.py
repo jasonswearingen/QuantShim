@@ -132,7 +132,7 @@ class Shims():
             if sid is Security:
                 security = sid
             else:
-                security = this.context.framework.targetedSecurities[sid]
+                security = this.context.framework.allSecurities[sid]
             #log.info("{0} ordering {1}".format(security.qsec,amount))
             order(security.qsec,amount,limit_price,stop_price)
             pass
@@ -225,34 +225,38 @@ class Shims():
             pass
         pass
 
-
-class FrameStateBase:
-    '''used to store state about the current frame of the simulation, and access the history'''
-    def __init__(this, parent, framework):
+class FrameHistory:
+    def __init__(this,parent,framework):
         this.parent = parent
         this.framework = framework
-
-    def initializeAndPrepend(this,history, data, maxHistoryFrames=None):            
-        '''inserts itself into the first slot of history and trims to max this.framework.maxHistoryFrames
-        DO NOT OVERRIDE.  override .initialize() instead
-        '''
-        if maxHistoryFrames is None:
-           maxHistoryFrames = this.framework.maxHistoryFrames
+        this.state=[]
+        this.isActive = this.parent.isActive
+        assert(this.framework.simFrame == this.parent.simFrame)
         
-        this.history = history
-        this.maxHistoryFrames = maxHistoryFrames
-        this.history.insert(0,this)
-        this.history[0:maxHistoryFrames]            
-        ##init
-        this.datetime = this.framework.get_datetime()
-        this.simFrame = this.framework.simFrame
-
-        this.initialize(data)
-        
-
-    def initialize(this, data):
-        '''override this to hook ending of .initializeAndPrepend()'''
+        this.initialize()
+    
+    def initialize(this):
+        '''overridable'''
         pass
+
+    def constructFrameState(this,data):
+        '''override and return the frame state, this will be prepended to history'''        
+        pass
+
+    def update(this,data):
+        if not this.isActive:
+            return
+
+        maxHistoryFrames = this.framework.maxHistoryFrames
+
+        currentState = this.constructFrameState(data)
+        
+        currentState.datetime = this.framework.get_datetime()
+        currentState.simFrame = this.framework.simFrame
+
+        this.state.insert(0,currentState)
+        this.state[0:maxHistoryFrames]
+
 
 class Position:
     '''
@@ -309,54 +313,6 @@ class PartialPosition:
 class Security:
     isDebug = False
 
-    class State(FrameStateBase):
-        '''used to store state about the current frame of the simulation, and access the history'''
-        
-        def initialize(this,data):
-            this.isActive = this.parent.isActive
-            assert(this.framework.simFrame == this.parent.simFrame)
-            if not this.isActive:
-                return
-
-            #preset for proper intelisence
-            this.datetime = datetime.datetime.now()
-            this.open_price = 0.0
-            this.close_price = 0.0
-            this.high = 0.0
-            this.low = 0.0
-            this.volume = 0
-
-            this.datetime = data[this.parent.qsec].datetime
-            this.open_price = data[this.parent.qsec].open_price
-            this.close_price = data[this.parent.qsec].close_price
-            this.high = data[this.parent.qsec].high
-            this.low = data[this.parent.qsec].low
-            this.volume = data[this.parent.qsec].volume
-
-            
-            this.__voters = 0
-            
-            this._voteLong = 0
-            this._voteShort = 0
-            this._voteHold = 0
-            this._voteCloseLong = 0
-            this._voteCloseShort = 0
-
-            this._voteLongAmount = 0.0
-            this._voteShortAmount = 0.0
-            this._voteHoldAmount = 0.0
-            this._voteCloseLongAmount = 0.0
-            this._voteCloseShortAmount = 0.0
-
-            #final expenditure after votes are tallied
-            this._targetOrderPercent = 0.0
-
-            try:                
-                this.returns = data[this.parent.qsec].returns()
-            except:
-                this.framework.logger.error("{0} unable to obtain returns()  setting returns to zero  open={1}.  close = {2}".format(this.parent.qsec, this.open_price, this.close_price))
-                this.returns = 0.0
-
 
     class QSecurity:
         '''
@@ -388,7 +344,6 @@ class Security:
         this.security_start_date = datetime.datetime.utcfromtimestamp(0)
         this.security_end_date = datetime.datetime.utcfromtimestamp(0)
         this.simFrame = -1
-        this.state = []
         this.security_start_price = 0.0
         this.security_end_price = 0.0
         this.partialPositions = {}
@@ -428,9 +383,6 @@ class Security:
         else:
             this.isActive = False
 
-        #construct new state for this frame
-        nowState = Security.State(this,this.framework)
-        nowState.initializeAndPrepend(this.state, data)
         try:
             this.daily_close_price = this.framework.daily_close_price[this.qsec]
             this.daily_open_price = this.framework.daily_open_price[this.qsec]
@@ -458,10 +410,8 @@ class FrameworkBase():
         this.tradingAlgorithm = context.tradingAlgorithm
         this.simFrame = -1 #the current timestep of the simulation
         
-        this.targetedSids = [] #array of sids (ex: "SPY" if offline, 123 if online) you wish to target.  if
-                               #empty, all securites returned by data are used
-        this.targetedSecurities = {} #dictionary, indexed by sid.  must check sec.isActive before using
         this.allSecurities = {} #dictionary of all securities, including those not targeted
+        this.activeSecurities = {}
 
         this.thisFrameDay = 0
         this.lastFrameDay = 0
@@ -470,43 +420,23 @@ class FrameworkBase():
             this.logger = Shims._Logger(this)
         else:
             this.logger = log
+
+
+        #for storing quantopian history
+        this.daily_close_price = pandas.DataFrame()
+        this.daily_open_price = pandas.DataFrame()
+        
+
         pass
     
     def initialize(this):
         #do init here
-        if this.isOffline:
-            #passed to the run method
-            this._offlineZiplineData = this.initialize_loadDataOffline_DataFrames()
-            #our targeted sids will be everything returned by 'data'
-            #this.targetedSids = list(this._offlineZiplineData.columns.values)
-        else:
-            targetedQSecs = this.initialize_loadDataOnline_SecArray()
-            if targetedQSecs:
-                this.targetedSids = [sec.sid for sec in targetedQSecs]
-            
-            #this.tradingAlgorithm.logger.info(len(this.securityIds))
-            #this.tradingAlgorithm.logger.info(this.securityIds)
-
         this.init_internal()
         pass
 
     def init_internal(this):
         '''override this to do your init'''
         pass
-
-    def initialize_loadDataOffline_DataFrames(this):
-        '''return a pandas dataframes of securities, ex: using the zipline.utils.factory.load_from_yahoo method
-        these will be indexed in .securityId's for you to lookup in your abstract_handle_data(data)'''
-        return pandas.DataFrame()
-        pass
-    def initialize_loadDataOnline_SecArray(this):
-        '''return an array of securities, ex: [sid(123)]
-        these will be indexed in .securityId's for you to lookup in your abstract_handle_data(data)
-        return an empty array or none to target all securities found in data.  (good for using the set_universe)
-        '''
-        return []
-        pass
-
 
 
     def initialize_first_update(this,data):
@@ -519,15 +449,18 @@ class FrameworkBase():
         '''
 
         #frame updates
+        #this.data = data
+
         this.simFrame+=1        
         
         this.lastFrameDay = this.thisFrameDay
         this.thisFrameDay = this.get_datetime().day
-
-        #this.targetedSecurities.clear()
-        this.data = data
-
-
+        
+        #supdating our history once per day
+        if(this.thisFrameDay != this.lastFrameDay):
+            #only update this once per day, hopefully improving performance...
+            this.daily_close_price = history(bar_count=180, frequency='1d', field='close_price')
+            this.daily_open_price = history(bar_count=180, frequency='1d', field='open_price')
 
         this.__updateSecurities(data)
         
@@ -564,14 +497,11 @@ class FrameworkBase():
 
 
         #construct new Security objects for our newQSecs
-        for sid, qsec in newQSecs.items():
-            newSecurity = Security(sid,this)
-            assert(not this.targetedSecurities.has_key(sid))
+        for sid, qsec in newQSecs.items():            
             assert(not this.allSecurities.has_key(sid))
-            this.allSecurities[sid] = newSecurity
-            #add it to targeted collection if we need to
-            if len(this.targetedSids) == 0 or sid in this.targetedSids:
-                this.targetedSecurities[sid] = newSecurity
+
+            this.allSecurities[sid] = this.GetOrCreateSecurity(sid, qsec, data)
+
         newQSecs.clear()
 
 
@@ -580,18 +510,66 @@ class FrameworkBase():
         for sid, security in this.allSecurities.items():
             qsec = currentQSecs.get(sid)
             security.update(qsec, data)
-        
 
-    def get_datetime(this):
-        if is_offline_Zipline:
-            if len(this.targetedSecurities) == 0:
-                return datetime.datetime.fromtimestamp(0,pytz.UTC)
-            else:
-                return this.targetedSecurities.values()[0].datetime
-        else:
-            return get_datetime()
+        ## determine active securities set.
+        this.activeSecurities.clear()
+        for sid,security in this.allSecurities.items():
+            if not security.isActive:
+                continue
+            this.activeSecurities[sid] = security
+            pass
+
         pass
 
+    def _initializeSecurity(this,security,data):
+        '''override to do custom init logic on each security. 
+        if you wish to use your own security, return it (it will replace the existing)'''
+        pass       
+             
+    #def GetOrCreateSecuritySecurities(this,qsecArray):
+    #    '''pass in an array of quantopian sec (ex:  [sid(24),sid(3113)]) 
+    #    and returns an array of unique security objects wrapping them.   duplicate sids are ignored'''
+    #    securities = {}
+    #    for qsec in qsecArray:
+    #        sid = qsec.sid
+    #        securities[sid] = this.GetOrCreateSecurity(qsec)
+    #        pass
+    #    return securities.values()
+    #    pass
+    def GetOrCreateSecurity(this, sid, qsec, data):
+        '''pass in a quantopian sec (ex:  sid(24)) and returns our security object wrapping it
+        if the security object
+        '''
+        
+
+        if this.allSecurities.has_key(sid):
+            return this.allSecurities[sid]
+
+        #does not exist, have to create
+        newSecurity = Security(sid,this)
+        #new, so do our framework's custom init logic on this security
+        maybeNewSec = this._initializeSecurity(newSecurity,data)
+        if maybeNewSec is not None:
+            #framework replaced newSec with a different sec
+            newSecurity = maybeNewSec
+                
+        this.allSecurities[sid] = newSecurity
+        
+        return newSecurity
+        pass
+
+
+    def get_datetime(this):
+        #if is_offline_Zipline:
+        #    if len(this.allSecurities) == 0:
+        #        return datetime.datetime.fromtimestamp(0,pytz.UTC)
+        #    else:
+        #        assert(False,"need to fix this to return something valid.  all securities isn't good enough.  probably search for first active")
+        #        return this.allSecurities.values()[0].datetime
+        #else:
+        #    return get_datetime()
+        #pass
+        return get_datetime()
 #entrypoints
 
 
@@ -623,6 +601,9 @@ def initialize(context=Shims.Context()):
     '''initialize method used when running on quantopian'''
     context.firstFrame = True 
 
+    context.sec = sid(19656);
+    log.info(context.sec)
+
     ########## SET UNIVERSE
     #if you need set universe, do it here (note that doing this slows the algo
     #considerably, seems frozen)
@@ -642,185 +623,183 @@ def initialize(context=Shims.Context()):
 ##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
 ##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
 ##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
-class StandardTechnicalIndicators(FrameStateBase):
+class StandardTechnicalIndicators(FrameHistory):
 
-    def initialize(this, data):
+    class State:
+        def __init__(this,parent,data):
+            this.parent = parent
+            #preset for proper intelisence
+            this.datetime = datetime.datetime.now()
+            this.open_price = 0.0
+            this.close_price = 0.0
+            this.high = 0.0
+            this.low = 0.0
+            this.volume = 0
+
+            this.mavg3 = 0.0
+            this.mavg7 = 0.0  
+            this.mavg15 = 0.0
+            this.mavg30 = 0.0    
+            this.mavg45 = 0.0
+            this.mavg60 = 0.0
+
+            this.stddev3 = 0.0
+            this.stddev7 = 0.0
+            this.stddev15 = 0.0
+            this.stddev30 = 0.0
+            this.stddev45 = 0.0
+            this.stddev60 = 0.0
+
+            this.datetime = data[this.parent.qsec].datetime
+            this.open_price = data[this.parent.qsec].open_price
+            this.close_price = data[this.parent.qsec].close_price
+            this.high = data[this.parent.qsec].high
+            this.low = data[this.parent.qsec].low
+            this.volume = data[this.parent.qsec].volume
+
+            this.mavg3 = data[this.parent.qsec].mavg(3)
+            this.mavg7 = data[this.parent.qsec].mavg(7)        
+            this.mavg15 = data[this.parent.qsec].mavg(15)
+            this.mavg30 = data[this.parent.qsec].mavg(30)        
+            this.mavg45 = data[this.parent.qsec].mavg(45)
+            this.mavg60 = data[this.parent.qsec].mavg(60)
+
+            this.stddev3 = data[this.parent.qsec].stddev(3)
+            this.stddev7 = data[this.parent.qsec].stddev(7)        
+            this.stddev15 = data[this.parent.qsec].stddev(15)
+            this.stddev30 = data[this.parent.qsec].stddev(30)        
+            this.stddev45 = data[this.parent.qsec].stddev(45)
+            this.stddev60 = data[this.parent.qsec].stddev(60)
+
+            try:                
+                this.returns = data[this.parent.qsec].returns()
+            except:
+                this.framework.logger.error("{0} unable to obtain returns()  setting returns to zero  open={1}.  close = {2}".format(this.parent.qsec, this.open_price, this.close_price))
+                this.returns = 0.0
+
+    def constructFrameState(this,data):
+        currentState = StandardTechnicalIndicators.State(this.parent,data)
+        return currentState
         
-        #predefine for intelisence
-        this.mavg3 = 0.0
-        this.mavg7 = 0.0  
-        this.mavg15 = 0.0
-        this.mavg30 = 0.0    
-        this.mavg45 = 0.0
-        this.mavg60 = 0.0
 
-        this.stddev3 = 0.0
-        this.stddev7 = 0.0
-        this.stddev15 = 0.0
-        this.stddev30 = 0.0
-        this.stddev45 = 0.0
-        this.stddev60 = 0.0
+#class FollowMarketStrategy(FrameStateBase):
+#    def initialize(this, data):
+#        #partialPositions
+#        this.parialPosition = this.parent.partialPositions["followMarketStrategy"]
 
-        this.mavg3 = data[this.parent.qsec].mavg(3)
-        this.mavg7 = data[this.parent.qsec].mavg(7)        
-        this.mavg15 = data[this.parent.qsec].mavg(15)
-        this.mavg30 = data[this.parent.qsec].mavg(30)        
-        this.mavg45 = data[this.parent.qsec].mavg(45)
-        this.mavg60 = data[this.parent.qsec].mavg(60)
-
-        this.stddev3 = data[this.parent.qsec].stddev(3)
-        this.stddev7 = data[this.parent.qsec].stddev(7)        
-        this.stddev15 = data[this.parent.qsec].stddev(15)
-        this.stddev30 = data[this.parent.qsec].stddev(30)        
-        this.stddev45 = data[this.parent.qsec].stddev(45)
-        this.stddev60 = data[this.parent.qsec].stddev(60)
-
-        pass
-
-class FollowMarketStrategy(FrameStateBase):
-    def initialize(this, data):
-        #partialPositions
-        this.parialPosition = this.parent.partialPositions["followMarketStrategy"]
-
-        security = this.parent
+#        security = this.parent
         
-        #simple "follow market" example
+#        #simple "follow market" example
         
-        if security.state[0].close_price < security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 < security.standardIndicators[0].mavg30:
-            this.parialPosition.targetCapitalSharePercent = 1.0
-        elif security.state[0].close_price > security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 > security.standardIndicators[0].mavg30:
-            this.parialPosition.targetCapitalSharePercent = -1.0
-        else:
-            this.parialPosition.targetCapitalSharePercent = 0.0
+#        if security.state[0].close_price < security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 < security.standardIndicators[0].mavg30:
+#            this.parialPosition.targetCapitalSharePercent = 1.0
+#        elif security.state[0].close_price > security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 > security.standardIndicators[0].mavg30:
+#            this.parialPosition.targetCapitalSharePercent = -1.0
+#        else:
+#            this.parialPosition.targetCapitalSharePercent = 0.0
 
-        pass
+#        pass
 
-class FollowPriorDayStrategy(FrameStateBase):
-    def initialize(this, data):
-        #partialPositions
-        this.parialPosition = this.parent.partialPositions["followPriorDayStrategy"]
+#class FollowPriorDayStrategy(FrameStateBase):
+#    def initialize(this, data):
+#        #partialPositions
+#        this.parialPosition = this.parent.partialPositions["followPriorDayStrategy"]
 
-        security = this.parent
+#        security = this.parent
         
-        if len(security.daily_close_price) < 2:
-            this.framework.logger.warn("security has invalid days {0}".format(security.qsec))
-            return
+#        if len(security.daily_close_price) < 2:
+#            this.framework.logger.warn("security has invalid days {0}".format(security.qsec))
+#            return
 
-        #simple "follow prior day" example
-        wasYesterdayUp = security.daily_close_price[-1] > security.daily_close_price[-2]
-        if wasYesterdayUp:
-            #long
-            this.parialPosition.targetCapitalSharePercent = 1.0
-        else:
-            #short
-            this.parialPosition.targetCapitalSharePercent = -1.0
-        pass
+#        #simple "follow prior day" example
+#        wasYesterdayUp = security.daily_close_price[-1] > security.daily_close_price[-2]
+#        if wasYesterdayUp:
+#            #long
+#            this.parialPosition.targetCapitalSharePercent = 1.0
+#        else:
+#            #short
+#            this.parialPosition.targetCapitalSharePercent = -1.0
+#        pass
 
 
 class ExampleAlgo(FrameworkBase):
 
-    def init_internal(this):
-        #for storing quantopian history
-        this.daily_close_price = pandas.DataFrame()
-        this.daily_open_price = pandas.DataFrame()
-        pass
+    #def init_internal(this):
+    #    pass
 
-    def initialize_loadDataOffline_DataFrames(this):
-        '''only called when offline (zipline)
-        note that i dropped offline zipline support due to it's differences/defects so you'll have to get it working again yourself'''
-        # Load data
-        start = datetime.datetime(2002, 1, 4, 0, 0, 0, 0, pytz.utc)
-        end = datetime.datetime(2002, 3, 1, 0, 0, 0, 0, pytz.utc)
-        data = zipline.utils.factory.load_from_yahoo(stocks=['SPY', 'XLY'], indexes={}, start=start,
-                           end=end, adjusted=False)
-        return data
-        pass
-    def initialize_loadDataOnline_SecArray(this):
-        '''only called when online (quantopian)'''
-        qsecs = [#sid(8554), # SPY S&P 500
-                sid(38533), # UPRO ProShares UltraPro S&P500 (3x) (2010)
-                ]
-        #if we return an array of qsecs, our framework will ignore any
-        #additional securities found in data
-        return qsecs 
-    
-    def initialize_first_update(this, data):
-        this.knownSecurities = {}
+
+    #def initialize_first_update(this, data):
+    #    pass
 
     def update(this, data):
-        ''' order 1 share of the first security each timestep'''  
-        
-        ##PHASE 1: let framework init new securities, determine active.
+        ##PHASE 1: do any housekeeping during updates here
+        #no-op
+        return
 
-        #start by updating our history
-        if(this.thisFrameDay != this.lastFrameDay):
-            #only update this once per day, hopefully improving performance...
-            this.daily_close_price = history(bar_count=200, frequency='1d', field='close_price')
-            this.daily_open_price = history(bar_count=200, frequency='1d', field='open_price')
-
-        activeSecurities = {}
-        for sid,security in this.allSecurities.items():
-            if not this.knownSecurities.has_key(sid):
-                this.knownSecurities[sid] = security
-                #new, so do our framework's custom init logic on this security
-                this.__initializeSecurity(security,data)
-
-            if not security.isActive:
-                continue
-            activeSecurities[sid] = security
-        
-        for sid,security in activeSecurities.items():
-            ##PHASE 2: update technical indicators for ALL active securities (targeted or not)
-            ##found
+        ##PHASE 2: update technical indicators for ALL active securities (targeted or not)
+        for sid,security in this.activeSecurities.items():
             this.__update_technicalIndicators(security,data)
        
-        for sid,security in this.targetedSecurities.items():
-            if not security.isActive:
-                continue
-            #PHASE 3: update algorithms for targetedSecurities
-            this.__update_algorithms(security,data)
+
+        #for sid,security in this.targetedSecurities.items():
+        #    if not security.isActive:
+        #        continue
+        #    #PHASE 3: update algorithms for targetedSecurities
+        #    this.__update_algorithms(security,data)
 
            
-        for sid,security in this.targetedSecurities.items():
-            if not security.isActive:
-                continue
-            ##PHASE 4: process orders for targetedSecurities
-            this.__update_orders(security,data)
-        record(port_value = this.context.portfolio.portfolio_value, pos_value = this.context.portfolio.positions_value , cash = this.context.portfolio.cash)
+        #for sid,security in this.targetedSecurities.items():
+        #    if not security.isActive:
+        #        continue
+        #    ##PHASE 4: process orders for targetedSecurities
+        #    this.__update_orders(security,data)
+        #record(port_value = this.context.portfolio.portfolio_value, pos_value = this.context.portfolio.positions_value , cash = this.context.portfolio.cash)
 
-    def __initializeSecurity(this,security,data):
+    def _initializeSecurity(this,security,data):
         '''do our framework's custom init logic on this security'''
-        security.standardIndicators = []
+        security.standardIndicators = StandardTechnicalIndicators(security,this)
         
-        security.followMarketStrategy = [] #history for tthis strategy
-        security.partialPositions["followMarketStrategy"] = PartialPosition(security, "followMarketStrategy") 
+        #security.followMarketStrategy = [] #history for tthis strategy
+        #security.partialPositions["followMarketStrategy"] = PartialPosition(security, "followMarketStrategy") 
 
-        security.followPriorDayStrategy = [] #history for tthis strategy
-        security.partialPositions["followPriorDayStrategy"] = PartialPosition(security, "followPriorDayStrategy")
+        #security.followPriorDayStrategy = [] #history for tthis strategy
+        #security.partialPositions["followPriorDayStrategy"] = PartialPosition(security, "followPriorDayStrategy")
 
         pass
 
     def __update_technicalIndicators(this,security,data):
         '''##PHASE 2: update technical indicators for ALL active securities found'''
-        frameStdInd = StandardTechnicalIndicators(security,this)
-        frameStdInd.initializeAndPrepend(security.standardIndicators, data)
-        assert(frameStdInd == security.standardIndicators[0])
-
+        security.standardIndicators.update(data)
         pass
+
     def __update_algorithms(this,security,data):
         '''#PHASE 3: update algorithms for targetedSecurities'''
         
-        followMarketStrategy = FollowMarketStrategy(security,this)
-        followMarketStrategy.initializeAndPrepend(security.followMarketStrategy,data)
+        #followMarketStrategy = FollowMarketStrategy(security,this)
+        #followMarketStrategy.initializeAndPrepend(security.followMarketStrategy,data)
         
-        followPriorDayStrategy = FollowPriorDayStrategy(security,this)
-        followPriorDayStrategy.initializeAndPrepend(security.followPriorDayStrategy,data)
+        #followPriorDayStrategy = FollowPriorDayStrategy(security,this)
+        #followPriorDayStrategy.initializeAndPrepend(security.followPriorDayStrategy,data)
 
         pass
     def __update_orders(this,security,data):    
         '''##PHASE 4: process orders for targetedSecurities     '''  
 
         security.update_orders_phase4(data)
+
+class Study:
+    def __init__(this,framework):
+        this.framework = framework
+    def initialize(this,data):
+        pass
+    def update_start(this,data):
+        pass
+    def update_securities(this,data):
+        pass
+    def update_orders(this,data):
+        pass
+    def update_end(this,data):
+        pass
 
 ##############  CONFIGURATION BELOW
 def constructFramework(context,isOffline):

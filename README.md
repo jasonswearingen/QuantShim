@@ -5,7 +5,7 @@ a python framework for trading financial instruments algorithmicly via quantopia
 
 Why
 ===
-- I want a R&D platform to implement studies and synthetic stocks easily, AND
+- I want a R&D platform to implement studies and synthetic securities easily, AND
 - I wanted a codebase that can use Python Tools for Visual Studio's intelisence.  
  - So that's why I made this.
 
@@ -20,12 +20,13 @@ History
  - add multi-phase updates, allow framework to custom init securities
  - add partial positions, so that strategies can order independantly of eachother
 - v1.0.2
- - add realistic example of multistrategy collab (followMarketStrategy and followPriorDayStrategy operating at the same time)
+ - Add logic for multi-algorithm and multi-security collaboritive trading.
+  - add realistic example of multistrategy collab (followMarketStrategy and followPriorDayStrategy operating at the same time)
+ - focus on intraday, but make sure framework+algos can still work with interday
+ - infrastructure for storing daily history per security/algo
 Roadmap
 =============
-- Add logic for multi-algorithm and multi-security collaboritive trading.
-- focus on intraday, but make sure framework+algos can still work with interday
-- infrastructure for storing history per algo-security pair
+- ???  email me at <jasons aat novaleaf doot coom> if you want something
 
 
 
@@ -60,7 +61,8 @@ There are far too many differences/defects with the zipline runtime to continue 
 
 work in progress (todo)
 ========
-
+- cleanup / simplifying workflows and architecture
+- ???  email me at <jasons aat novaleaf doot coom> if you want something
 
 
 
