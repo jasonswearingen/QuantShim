@@ -321,9 +321,13 @@ class FrameHistory:
 
 
 
-class PartialPosition:
-    '''allows multiple independent positions per security, 
-    each using a fixed percentage of the current portfolio value'''
+class StrategyPosition:
+    '''allows two or more stratgies (studies) to controll their own positions (orders) for securities they care about, 
+    without interfering with the orders of other strategies.
+
+    To use:   each strategy should set security.myStrategyPositon.targetCapitalSharePercent, which is a percentage of your entire portfolio's value
+    then execute the order (and/or rebalance) by invoking security.myStrategyPosition.processOrder()
+    '''
 
     def __init__(this, security, strategyName):            
         this.security = security
@@ -335,19 +339,15 @@ class PartialPosition:
         #this is editable
         this.targetCapitalSharePercent = 0.0
 
-    def processOrder(this, rebalanceThreshholdPercent=0.05):
+    def processOrder(this, data, rebalanceThreshholdPercent=0.05):
         ''' set rebalanceThreshholdPercent to zero (0.0) to cause the position to readjust even if the targetPercentage doesn't change.   this is useful for reinvesting divideds / etc
         but is set to 0.02 (2 percent) so we don't spam orders '''
-
-        if(len(this.security.standardIndicators.state) ==0):
-            log.error("NO STANDARD INDICATORS FOUND! sec={0}".format(this.security.sid))
-            return
-
+        
         this.currentCapitalSharePercent = this.targetCapitalSharePercent       
 
         #determine value of percent
         targetSharesValue = this.security.framework.context.portfolio.portfolio_value * this.currentCapitalSharePercent
-        targetSharesTotal = int(math.copysign(math.floor(abs(targetSharesValue / this.security.standardIndicators.state[0].close_price)),targetSharesValue))
+        targetSharesTotal = int(math.copysign(math.floor(abs(targetSharesValue / data[this.security.qsec].close_price)),targetSharesValue))
         
         targetSharesDelta = targetSharesTotal - this.currentShares
 
@@ -681,8 +681,10 @@ def initialize(context=Shims.Context()):
 ##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
 
 class StandardTechnicalIndicators(FrameHistory):
-
+    '''common technical indicators that we plan to use for any/all studies
+    feel free to extend this, or use as a reference for constructing specialized technical indicators'''
     class State:
+        '''State recorded for each frame (minute).  number of frames history we store is determined by framework.maxHistoryFrames'''
         def __init__(this,parent,data):
             this.parent = parent
             #preset for proper intelisence
@@ -738,90 +740,10 @@ class StandardTechnicalIndicators(FrameHistory):
         #log.debug("StandardTechnicalIndicators.constructFrameState")
         currentState = StandardTechnicalIndicators.State(this.parent,data)
         return currentState
-        
 
-#class FollowMarketStrategy(FrameStateBase):
-#    def initialize(this, data):
-#        #partialPositions
-#        this.parialPosition = this.parent.partialPositions["followMarketStrategy"]
-
-#        security = this.parent
-        
-#        #simple "follow market" example
-        
-#        if security.state[0].close_price < security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 < security.standardIndicators[0].mavg30:
-#            this.parialPosition.targetCapitalSharePercent = 1.0
-#        elif security.state[0].close_price > security.standardIndicators[0].mavg7 and security.standardIndicators[0].mavg7 > security.standardIndicators[0].mavg30:
-#            this.parialPosition.targetCapitalSharePercent = -1.0
-#        else:
-#            this.parialPosition.targetCapitalSharePercent = 0.0
-
-#        pass
-
-#class FollowPriorDayStrategy(FrameStateBase):
-#    def initialize(this, data):
-#        #partialPositions
-#        this.parialPosition = this.parent.partialPositions["followPriorDayStrategy"]
-
-#        security = this.parent
-        
-#        if len(security.daily_close_price) < 2:
-#            this.framework.logger.warn("security has invalid days {0}".format(security.qsec))
-#            return
-
-#        #simple "follow prior day" example
-#        wasYesterdayUp = security.daily_close_price[-1] > security.daily_close_price[-2]
-#        if wasYesterdayUp:
-#            #long
-#            this.parialPosition.targetCapitalSharePercent = 1.0
-#        else:
-#            #short
-#            this.parialPosition.targetCapitalSharePercent = -1.0
-#        pass
-
-
-class ExampleFramework(FrameworkBase):
-
-    def initialize(this):
-        '''initialization logic for your framework goes here.
-        our naming conventions imply any function starting with an underscore SHOULD NOT be overridden.   
-        functions without an underscore can (and should) be overriden.'''
-        this.quantopianRealMoney = QuantopianRealMoney9SectorStudy(this)
-        pass
-
-    def initializeFirstUpdate(this, data):
-        '''called the first timestep, before update.  
-        provides access to the 'data' object which normal .initialize() does not'''
-        pass
-
-    def initializeSecurity(this,security):
-        '''The QuantShim framework constructs a "Security" object wrapping the quantopian sec  (we call it 'qsec')
-        add initialization logic to securities here, such as shown by our adding of 'standardIndicators' below
-        '''
-        #attach standard technical indicators to our security
-        security.standardIndicators = StandardTechnicalIndicators(security,this)
-        pass
-
-    def update(this, data):
-        '''this .update() method is invoked every frame (once per minute interval of quantopian) 
-        here is where you hook your studies, etc logic.  think of this as your '.handle_data' loop'''
-
-        ##PHASE 1: update technical indicators for ALL active securities (targeted or not)
-        for sid,security in this.activeSecurities.items():
-            #log.debug("ExampleAlgo.update() about to update stdInd {0}, sid={1}".format(security, sid))
-            security.standardIndicators.update(data)
-       
-        ##PHASE 2: run our studies
-        this.quantopianRealMoney.update(data)
-
-        ##various graphing
-        record(port_value = this.context.portfolio.portfolio_value, pos_value = this.context.portfolio.positions_value , cash = this.context.portfolio.cash)
-
-    pass
-
-
-class QuantopianRealMoney9SectorStudy:
-    '''this example study implements the trading algo that the quantopian principles are using for real money trading.
+    
+class QuantopianRealMoney9SectorStrategy:
+    '''this example strategy implements the trading algo that the quantopian principles are using for real money trading.
     see here: https://www.quantopian.com/posts/rebalance-algo-9-sector-etfs '''
     def __init__(this,framework):
         # This initialize function sets any data or variables that you'll use in your
@@ -850,9 +772,9 @@ class QuantopianRealMoney9SectorStudy:
         this.weights = 0.99/len(this.secs)    
         this.leverage=2
 
-        #add partialPositions to each of our study's securities so as to not interfere with other studies
+        #add StrategyPositions to each of our strategy's securities so as to not interfere with other studies
         for sec in this.secs:
-            sec.quantopianPartialPosition = PartialPosition(sec,"quantopianRealMoney9SectorStudy")
+            sec.quantopianStrategyPosition = StrategyPosition(sec,"quantopianRealMoney9SectorStrategy")
             
     def update(this,data):
         # Get the current exchange time, in the exchange timezone 
@@ -863,19 +785,62 @@ class QuantopianRealMoney9SectorStudy:
         
             #determine order amount per security
             for sec in this.secs:
-                sec.quantopianPartialPosition.targetCapitalSharePercent = this.weights * this.leverage  # order_target_percent(sec, context.weights * context.leverage, limit_price=None, stop_price=None)
+                sec.quantopianStrategyPosition.targetCapitalSharePercent = this.weights * this.leverage  # order_target_percent(sec, context.weights * context.leverage, limit_price=None, stop_price=None)
 
             #execute orders / rebalancing
             for sec in this.secs:
-                sec.quantopianPartialPosition.processOrder(0.0)
+                sec.quantopianStrategyPosition.processOrder(data, rebalanceThreshholdPercent=0.0)
             pass
+
+class ExampleFramework(FrameworkBase):
+    '''Example framework for you to extend, or use as reference.   
+    this example populates standardIndicators for all securities (including history), 
+    and executes the following example strategies:  QuantopianRealMoney9SectorStrategy, '''
+    def initialize(this):
+        '''initialization logic for your framework goes here.
+        our naming conventions imply any function starting with an underscore SHOULD NOT be overridden.   
+        functions without an underscore can (and should) be overriden.'''
+        this.quantopianRealMoney = QuantopianRealMoney9SectorStrategy(this)
+        pass
+
+    def initializeFirstUpdate(this, data):
+        '''called the first timestep, before update.  
+        provides access to the 'data' object which normal .initialize() does not'''
+        pass
+
+    def initializeSecurity(this,security):
+        '''The QuantShim framework constructs a "Security" object wrapping the quantopian sec  (we call it 'qsec')
+        add initialization logic to securities here, such as shown by our adding of 'standardIndicators' below
+        '''
+        #attach standard technical indicators to our security
+        security.standardIndicators = StandardTechnicalIndicators(security,this)
+        pass
+
+    def update(this, data):
+        '''this .update() method is invoked every frame (once per minute interval of quantopian) 
+        here is where you hook your studies, etc logic.  think of this as your '.handle_data' loop'''
+
+        ##PHASE 1: update technical indicators for ALL active securities (targeted or not)
+        for sid,security in this.activeSecurities.items():
+            #log.debug("ExampleAlgo.update() about to update stdInd {0}, sid={1}".format(security, sid))
+            security.standardIndicators.update(data) 
+       
+        ##PHASE 2: run our studies
+        this.quantopianRealMoney.update(data)
+
+        ##various graphing
+        record(port_value = this.context.portfolio.portfolio_value, pos_value = this.context.portfolio.positions_value , cash = this.context.portfolio.cash)
+
+    pass
+
+
 
 ##############  CONFIGURATION BELOW
 def constructFramework(context,isOffline):
     '''factory method to return your custom framework/trading algo'''
     return ExampleFramework(context,isOffline)
 
-############## OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
+############## OBSOLETE OFLINE RUNNER BELOW.  EDIT ABOVE THIS LINE
 if __name__ == '__main__':  
     is_offline_Zipline = True
     initalize_zipline() #obsolete, this framework doesn't work with zipline anymore
