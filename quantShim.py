@@ -2,19 +2,19 @@
 """
 TL;DR:  
 1) jump to the end of this file
-2) replace "ExampleAlgo"
+2) replace/extend "ExampleFramework" (around line 800)
 3) copy/paste this file to quantopian 
 4) backtest
 -------------
 
-An intraday algorithmic trading framework for use with quantopian.com   
+@summary: An intraday algorithmic trading framework for use with quantopian.com   
 Primary use is to support multiple algorithms cooperating
 
 @license: gpl v3
 
 @author: JasonS@Novaleaf.com  https://PhantomJsCloud.com
 
-disclaimer:  I'm not a fan of python so sorry if this isn't PEP compliant.
+@disclaimer:  I'm not a fan of python so sorry that this isn't PEP compliant.
 
 
 """
@@ -322,7 +322,7 @@ class FrameHistory:
 
 
 class StrategyPosition:
-    '''allows two or more stratgies (studies) to controll their own positions (orders) for securities they care about, 
+    '''allows two or more stratgies to controll their own positions (orders) for securities they care about, 
     without interfering with the orders of other strategies.
 
     To use:   each strategy should set security.myStrategyPositon.targetCapitalSharePercent, which is a percentage of your entire portfolio's value
@@ -681,7 +681,7 @@ def initialize(context=Shims.Context()):
 ##############  CROSS PLATFORM USERCODE BELOW.  EDIT BELOW THIS LINE
 
 class StandardTechnicalIndicators(FrameHistory):
-    '''common technical indicators that we plan to use for any/all studies
+    '''common technical indicators that we plan to use for any/all strategies
     feel free to extend this, or use as a reference for constructing specialized technical indicators'''
     class State:
         '''State recorded for each frame (minute).  number of frames history we store is determined by framework.maxHistoryFrames'''
@@ -772,7 +772,7 @@ class QuantopianRealMoney9SectorStrategy:
         this.weights = 0.99/len(this.secs)    
         this.leverage=2
 
-        #add StrategyPositions to each of our strategy's securities so as to not interfere with other studies
+        #add StrategyPositions to each of our strategy's securities so as to not interfere with other strategies
         for sec in this.secs:
             sec.quantopianStrategyPosition = StrategyPosition(sec,"quantopianRealMoney9SectorStrategy")
             
@@ -818,14 +818,14 @@ class ExampleFramework(FrameworkBase):
 
     def update(this, data):
         '''this .update() method is invoked every frame (once per minute interval of quantopian) 
-        here is where you hook your studies, etc logic.  think of this as your '.handle_data' loop'''
+        here is where you hook your strategies, etc logic.  think of this as your '.handle_data' loop'''
 
         ##PHASE 1: update technical indicators for ALL active securities (targeted or not)
         for sid,security in this.activeSecurities.items():
             #log.debug("ExampleAlgo.update() about to update stdInd {0}, sid={1}".format(security, sid))
             security.standardIndicators.update(data) 
        
-        ##PHASE 2: run our studies
+        ##PHASE 2: run our strategies
         this.quantopianRealMoney.update(data)
 
         ##various graphing
