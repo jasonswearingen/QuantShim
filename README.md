@@ -1,7 +1,7 @@
 QuantShim
 =========
 
-a python framework for trading financial instruments algorithmicly via quantopian.com.  
+A Python framework for R&D of financial investment strategies, and trading them algorithmiclly via Quantopian.com
 
 
 Features
