@@ -3,33 +3,49 @@ QuantShim
 
 a python framework for trading financial instruments algorithmicly via quantopian.com.  
 
+
+Features
+========
+- Detailed order logging
+- WorstSpreadSlippage to simulate pessimistic yet realistic order execution
+- Strategy framework that's easy to extend
+ - StrategyPositions: Each strategy can control it's own positions without interfering with other strategy
+ - Multiple Strategies supported
+- TechnicalIndicators framework that's easy to extend
+ - State History stored for inspecting previous frames
+ - StandardTechnicalIndicators provided as example
+- Designed for coding via Python Tools for Visual Studio
+ - simple copy/paste into quantopian to execute
+ - intelisence for most quantopian internals
+- Open Source (GPL3)
+
 Why
 ===
 - I want a R&D platform to implement studies and synthetic securities easily, AND
 - I wanted a codebase that can use Python Tools for Visual Studio's intelisence.  
  - So that's why I made this.
 
-
 History
 ======
-- v1
--- The first checkin is Zipline compatable.  After that it is not.
-- v1.0.1
- - Add Security object to provide persistant state / logic for securities
- - Add state history to security, provide easy way for things to get their own state + history of their own state.
- - add multi-phase updates, allow framework to custom init securities
- - add partial positions, so that strategies can order independantly of eachother
-- v1.0.2 (20140401)
- - Add logic for multi-algorithm and multi-security collaboritive trading.
-  - add realistic example of multistrategy collab (followMarketStrategy and followPriorDayStrategy operating at the same time)
- - focus on intraday, but make sure framework+algos can still work with interday
- - infrastructure for storing daily history per security/algo
 - v1.0.3 (20140419)
  - cleanup / simplifying workflows and architecture 
   - removed old examples,  now 'study' focused
   - added QuantopianRealMoney study as an example
   - renamed classes/functions and added docs
   - added WorstSpreadSlippage and high quality order logging
+- v1.0.2
+ - Add logic for multi-algorithm and multi-security collaboritive trading.
+  - add realistic example of multistrategy collab (followMarketStrategy and followPriorDayStrategy operating at the same time)
+ - focus on intraday, but make sure framework+algos can still work with interday
+ - infrastructure for storing daily history per security/algo
+- v1.0.1
+ - Add Security object to provide persistant state / logic for securities
+ - Add state history to security, provide easy way for things to get their own state + history of their own state.
+ - add multi-phase updates, allow framework to custom init securities
+ - add partial positions, so that strategies can order independantly of eachother
+- v1
+ - The first checkin is Zipline compatable.  After that it is not.
+
 
 Roadmap
 =============
