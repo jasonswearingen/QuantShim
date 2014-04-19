@@ -291,7 +291,7 @@ class FrameHistory:
         this.framework = framework
         this.state=[]
         this.isActive = this.parent.isActive
-        assert(this.framework.simFrame == this.parent.simFrame, "parent frame does not match")
+        #assert(this.framework.simFrame == this.parent.simFrame, "parent frame does not match")
         
         this.initialize()
     
@@ -412,7 +412,7 @@ class Security:
         '''
         #update our tickcounter, mostly for debug
         this.simFrame = this.framework.simFrame
-        assert(this.simFrame >= 0,"security.update() frame not set")
+        #assert(this.simFrame >= 0,"security.update() frame not set")
 
         
         
@@ -420,7 +420,7 @@ class Security:
         this.qsec = qsec
         if qsec:
             this.isActive = True
-            assert(qsec.sid == this.sid,"security.update() sids do not match")            
+            #assert(qsec.sid == this.sid,"security.update() sids do not match")            
             
             if this.security_start_price == 0.0:
                 this.security_start_price = data[this.sid].close_price
@@ -552,7 +552,7 @@ class FrameworkBase():
 
         #construct new Security objects for our newQSecs
         for sid, qsec in newQSecs.items():            
-            assert(not this.allSecurities.has_key(sid),"frameworkBase.updateSecurities key does not exist")
+            #assert(not this.allSecurities.has_key(sid),"frameworkBase.updateSecurities key does not exist")
             #log.debug("FrameworkBase.__updateSecurities() new security found {0}".format(qsec))
             this.allSecurities[sid] = this._getOrCreateSecurity(sid, qsec)
 
