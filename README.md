@@ -19,11 +19,18 @@ History
  - Add state history to security, provide easy way for things to get their own state + history of their own state.
  - add multi-phase updates, allow framework to custom init securities
  - add partial positions, so that strategies can order independantly of eachother
-- v1.0.2
+- v1.0.2 (20140401)
  - Add logic for multi-algorithm and multi-security collaboritive trading.
   - add realistic example of multistrategy collab (followMarketStrategy and followPriorDayStrategy operating at the same time)
  - focus on intraday, but make sure framework+algos can still work with interday
  - infrastructure for storing daily history per security/algo
+- v1.0.3 (20140419)
+ - cleanup / simplifying workflows and architecture 
+  - removed old examples,  now 'study' focused
+  - added QuantopianRealMoney study as an example
+  - renamed classes/functions and added docs
+  - added WorstSpreadSlippage and high quality order logging
+
 Roadmap
 =============
 - ???  email me at <jasons aat novaleaf doot coom> if you want something
@@ -61,7 +68,7 @@ There are far too many differences/defects with the zipline runtime to continue 
 
 work in progress (todo)
 ========
-- cleanup / simplifying workflows and architecture
+- 
 - ???  email me at <jasons aat novaleaf doot coom> if you want something
 
 
