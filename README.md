@@ -21,7 +21,7 @@ Features
 
 Why
 ===
-- I want a R&D platform to implement studies and synthetic securities easily, AND
+- I want a R&D platform to implement strategies and synthetic securities easily, AND
 - I wanted a codebase that can use Python Tools for Visual Studio's intelisence.  
  - So that's why I made this.
 
@@ -29,8 +29,8 @@ History
 ======
 - v1.0.3 (20140419)
  - cleanup / simplifying workflows and architecture 
-  - removed old examples,  now 'study' focused
-  - added QuantopianRealMoney study as an example
+  - removed old examples,  now 'strategy' focused
+  - added QuantopianRealMoneyStrategy as an example
   - renamed classes/functions and added docs
   - added WorstSpreadSlippage and high quality order logging
 - v1.0.2
