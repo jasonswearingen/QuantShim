@@ -49,8 +49,7 @@ is_offline_Zipline = False
 
 class WorstSpreadSlippage(slippage.SlippageModel):
     '''will trade at the worst value of the order minute.  high if long, low if short. 
-    additionally, supports 'VolumeShareSlippage' functionality, which further biases price/volume
-    IMPORTANT NOTE: only meant for intraday (minute data) use.  using with daily data will cause unrealisticly poor performance.'''
+    additionally, supports 'VolumeShareSlippage' functionality, which further biases price/volume'''
     def __init__(this, volume_limit=.25, price_impact=0.1):
         this.volume_limit = volume_limit
         this.price_impact = price_impact
@@ -109,9 +108,9 @@ class WorstSpreadSlippage(slippage.SlippageModel):
         if price == 0.0 or volume==0:
             return
 
-        #log.info(price)        
-        log.info("{4} ORDER_COMMITTED: {0} shares {1} @ {2} \n\t  v={9} o={5} h={6} l={7} c={8} \t (WorstSpreadSlippage: vol= -{10} price= {3:.2f})"
-                    .format(volume,trade_bar.sid.symbol,price,priceSlippage,get_datetime(),trade_bar.open_price, trade_bar.high, trade_bar.low, trade_bar.close_price, trade_bar.volume,volumeSlippage ))
+        #logger.info(price)        
+        logger.info("ORDER_COMMITTED: {0} shares {1} @ {2} \n\t  v={8} o={4} h={5} l={6} c={7} \t (WorstSpreadSlippage: vol= -{9} price= {3:.2f})"
+                    .format(volume,trade_bar.sid.symbol,price,priceSlippage, trade_bar.open_price, trade_bar.high, trade_bar.low, trade_bar.close_price, trade_bar.volume,volumeSlippage ))
         
         return slippage.create_transaction(
                                             trade_bar,
@@ -119,6 +118,99 @@ class WorstSpreadSlippage(slippage.SlippageModel):
                                             price,
                                             order.amount
                                             )
+class Logger():
+    '''shim for exposing the same logging definitions to visualstudio intelisence'''
+    def __init__(this, logErrors=True, logInfos=True, logWarns=True, logDebugs=True):        
+        this.__logErrors = logErrors
+        this.__logInfos = logInfos
+        this.__logWarns = logWarns
+        this.__logDebugs = logDebugs
+        this.__recordHistory={}
+        this.__lastKnownDay = None
+        pass    
+
+    def error(this, message): 
+        if not this.__logErrors: return  
+        log.error(this.__wrapMessage(message))
+        pass
+    def info(this, message):
+        if not this.__logInfos: return  
+        log.info(this.__wrapMessage(message))
+        pass
+    def warn(this, message):   
+        if not this.__logWarns: return  
+        log.warn(this.__wrapMessage(message))
+        pass
+    def debug(this, message):  
+        if not this.__logDebugs: return  
+        log.debug(this.__wrapMessage(message))
+        pass
+
+    def __wrapMessage(this,message):
+        this.__trySpamDailyLogs() 
+        timestamp = this.framework._getDatetime()
+        
+        #return str(timestamp) + message
+        time = timestamp.strftime("%H:%M")
+        
+        #if timestamp.second!=0:
+        #    time += ":{0}".format(timestamp.second)
+
+        return time + ": " + message
+        pass
+
+    def debugAccumulateDaily(this,key,message):
+        '''writes the log once a day to avoid spam.  includes timestamp automatically'''
+        if not this.__logDebugs: return  
+        msg = this.__wrapMessage(message)
+        this.__storeToDailyLog(key,msg)
+
+    def debugOnceDaily(this,key,message):
+        if not this.__logDebugs: return  
+        
+        this.__storeToDailyLog(key,message)
+        this.__recordHistory[key] = this.__recordHistory[key][0:1]
+        this.__trySpamDailyLogs()
+        pass
+    def __storeToDailyLog(this,key,message):
+        if not this.__recordHistory.has_key(key):
+            this.__recordHistory[key]=[]
+        this.__recordHistory[key].append(message)
+
+        pass
+
+    def __trySpamDailyLogs(this):
+        if this.framework.thisFrameDay != this.__lastKnownDay:
+            #new day, dump our previous logs
+            this.__lastKnownDay = this.framework.thisFrameDay   
+            for key,values in this.__recordHistory.items():                         
+                this.debug("YD_RECORD@{0}=\n{1}".format(key,",".join(values) ))
+                values[:] = [] #clear it
+        pass
+
+    def record(this, name,value, logDaily=False):                    
+        this.__trySpamDailyLogs()            
+        if(logDaily==True):
+            this.__storeToDailyLog(name,"%0.4f" % value)
+        record(**{name:value})
+
+    def recordNormalized(this, name,value,baseline=1,subtract=0, logDaily=False):    
+        '''normalize values to a 0 to 1 range'''
+
+        if value - subtract == 0 or baseline == 0:
+            toRecord = 0
+        else:
+            toRecord = (value - subtract) / baseline
+
+        this.record(name,toRecord,logDaily=logDaily)
+
+    #def getLastRecord(this,name):        
+    #    '''returns the last recorded value.  only exists if doing daily outputs, and during the day.  returns None if name not found'''
+    #    return this.__recordHistory.get(name)
+    pass
+
+global logger
+logger = Logger()
 
 class Shims():
     '''SHIM OF QUANTOPIAN INTERNAL REPRESENTATION.  here for intelisence only.  you SHOULD NOT actually instantiate these.'''
@@ -193,7 +285,7 @@ class Shims():
                 security = sid
             else:
                 security = this.context.framework.allSecurities[sid]
-            #log.info("{0} ordering {1}".format(security.qsec,amount))
+            #logger.info("{0} ordering {1}".format(security.qsec,amount))
             order(security.qsec,amount,limit_price,stop_price)
             pass
 
@@ -291,25 +383,27 @@ class FrameHistory:
         this.framework = framework
         this.state=[]
         this.isActive = this.parent.isActive
+        this.maxHistoryFrames = this.framework.maxHistoryFrames
         #assert(this.framework.simFrame == this.parent.simFrame, "parent frame does not match")
         
         this.initialize()
     
     def initialize(this):
         '''overridable'''
+        logger.error("FrameHistory.initialize() invoked.  You should override this method.")
         pass
 
     def constructFrameState(this,data):
         '''override and return the frame state, this will be prepended to history'''   
-        log.error("FrameHistory.constructFrameState() invoked.  You should override this method.")             
+        logger.error("FrameHistory.constructFrameState() invoked.  You should override this method.")             
         pass
 
-    def update(this,data):
+    def _update(this,data):
         this.isActive = this.parent.isActive
         if not this.isActive:
             return
 
-        maxHistoryFrames = this.framework.maxHistoryFrames
+        
 
         currentState = this.constructFrameState(data)
         
@@ -317,7 +411,7 @@ class FrameHistory:
         currentState.simFrame = this.framework.simFrame
 
         this.state.insert(0,currentState)
-        this.state[0:maxHistoryFrames]
+        del this.state[this.maxHistoryFrames:]
 
 
 
@@ -357,7 +451,7 @@ class StrategyPosition:
                 return
 
         if(abs(targetSharesDelta) >= 1): #can not perform an order on less than 1 share 
-            this.security.framework.logger.info("{0} order {1} : {2} + {3} => {4} shares".format(this.strategyName,this.security.qsec.symbol, this.currentShares, targetSharesDelta, targetSharesTotal ))          
+            this.security.framework.logger.info("{0} order {1} : {2} + {3} => {4} shares".format(this.strategyName,this.security.symbol, this.currentShares, targetSharesDelta, targetSharesTotal ))          
             this.lastOrderId = this.security.framework.tradingAlgorithm.order(this.security.sid,targetSharesDelta)
             this.currentShares = targetSharesTotal
 
@@ -395,8 +489,9 @@ class Security:
         this.simFrame = -1
         this.security_start_price = 0.0
         this.security_end_price = 0.0
-        this.daily_open_price = [0.0]
-        this.daily_close_price = [0.0]
+        #this.daily_open_price = [0.0]
+        #this.daily_close_price = [0.0]
+        this.symbol = "??? Not yet active so symbol not known"
         
         
     def getCurrentPosition(this):
@@ -416,10 +511,11 @@ class Security:
 
         
         
-        #update qsec to most recent (if any)
+        #update qsec to most recent (if any)   67
         this.qsec = qsec
         if qsec:
             this.isActive = True
+            this.symbol = qsec.symbol
             #assert(qsec.sid == this.sid,"security.update() sids do not match")            
             
             if this.security_start_price == 0.0:
@@ -431,15 +527,15 @@ class Security:
         else:
             this.isActive = False
 
-        try:
-            this.daily_close_price = this.framework.daily_close_price[this.qsec]
-            this.daily_open_price = this.framework.daily_open_price[this.qsec]
-        except:
-            this.daily_close_price = []
-            this.daily_open_price = []
+        #try:
+        #    this.daily_close_price = this.framework.daily_close_price[this.qsec]
+        #    this.daily_open_price = this.framework.daily_open_price[this.qsec]
+        #except:
+        #    this.daily_close_price = []
+        #    this.daily_open_price = []
 
-        if len(this.daily_close_price) == 0 or len(this.daily_open_price) == 0:
-            this.isActive = False
+        #if len(this.daily_close_price) == 0 or len(this.daily_open_price) == 0:
+        #    this.isActive = False
 
 
 class FrameworkBase():
@@ -451,6 +547,7 @@ class FrameworkBase():
         this.tradingAlgorithm = Shims._TradingAlgorithm_QuantopianShim() #prepopulate to allow intelisence
         this.tradingAlgorithm = context.tradingAlgorithm
         this.simFrame = -1 #the current timestep of the simulation
+        this.framesToday = -1 #number of frames executed today
         
         this.allSecurities = {} #dictionary of all securities, including those not targeted
         this.activeSecurities = {}
@@ -461,12 +558,13 @@ class FrameworkBase():
         if is_offline_Zipline:
             this.logger = Shims._Logger(this)
         else:
-            this.logger = log
+            logger.framework = this
+            this.logger = logger
 
 
         #for storing quantopian history
-        this.daily_close_price = pandas.DataFrame()
-        this.daily_open_price = pandas.DataFrame()
+        #this.daily_close_price = pandas.DataFrame()
+        #this.daily_open_price = pandas.DataFrame()
         
 
         pass
@@ -476,19 +574,19 @@ class FrameworkBase():
         do not override this, or any other method starting with an underscore.
         methods without an underscore prefix can and should be overridden.'''
         #do init here
-        this.initialize()
+        this.initialize()        
         pass
 
     def initialize(this):
         '''override this to do your init'''
-        log.error("You should override FrameworkBase.initialize()")
+        logger.error("You should override FrameworkBase.initialize()")
         pass
 
 
     def initializeFirstUpdate(this,data):
         '''override this.  called the first timestep, before update.  
         provides access to the 'data' object which normal .initialize() does not'''
-        log.error("You should override FrameworkBase.initializeFirstUpdate()")
+        logger.error("You should override FrameworkBase.initializeFirstUpdate()")
         pass
 
     def _update(this,data):
@@ -504,12 +602,16 @@ class FrameworkBase():
         
         this.lastFrameDay = this.thisFrameDay
         this.thisFrameDay = this._getDatetime().day
+
         
         #supdating our history once per day
         if(this.thisFrameDay != this.lastFrameDay):
             #only update this once per day, hopefully improving performance...
-            this.daily_close_price = history(bar_count=180, frequency='1d', field='close_price')
-            this.daily_open_price = history(bar_count=180, frequency='1d', field='open_price')
+            #this.daily_close_price = history(bar_count=180, frequency='1d', field='close_price')
+            #this.daily_open_price = history(bar_count=180, frequency='1d', field='open_price')
+            this.framesToday = 0
+        else:
+            this.framesToday += 1
 
         this.__updateSecurities(data)
         
@@ -523,12 +625,12 @@ class FrameworkBase():
 
     def update(this,data):
         '''override and update your usercode here'''
-        log.error("You should override FrameworkBase.update()")
+        logger.error("You should override FrameworkBase.update()")
         pass
 
     def __updateSecurities(this,data):
         '''get all qsecs from data, then update the targetedSecurities accordingly'''
-        #log.debug("FrameworkBase.__updateSecurities() start.   allSecLength={0}".format(len(this.allSecurities)))
+        #logger.debug("FrameworkBase.__updateSecurities() start.   allSecLength={0}".format(len(this.allSecurities)))
         #convert our data into a dictionary
         currentQSecs = {}
         newQSecs = {}
@@ -541,19 +643,19 @@ class FrameworkBase():
                 sid = qsec
                 qsec = data[qsec]
             
-            #log.debug("FrameworkBase.__updateSecurities() first loop, found {0}, sid={1}.   exists={2}".format(qsec, sid,this.allSecurities.has_key(sid) ))
+            #logger.debug("FrameworkBase.__updateSecurities() first loop, found {0}, sid={1}.   exists={2}".format(qsec, sid,this.allSecurities.has_key(sid) ))
 
             currentQSecs[sid] = qsec
             #determine new securities found in data
             if not this.allSecurities.has_key(sid):
-                log.debug("FrameworkBase.__updateSecurities() new security detected.  will construct our security object for it: {0}".format(qsec))
+                logger.debug("FrameworkBase.__updateSecurities() new security detected.  will construct our security object for it: {0}".format(qsec))
                 newQSecs[sid] = qsec
 
 
         #construct new Security objects for our newQSecs
         for sid, qsec in newQSecs.items():            
             #assert(not this.allSecurities.has_key(sid),"frameworkBase.updateSecurities key does not exist")
-            #log.debug("FrameworkBase.__updateSecurities() new security found {0}".format(qsec))
+            #logger.debug("FrameworkBase.__updateSecurities() new security found {0}".format(qsec))
             this.allSecurities[sid] = this._getOrCreateSecurity(sid, qsec)
 
         newQSecs.clear()
@@ -569,9 +671,9 @@ class FrameworkBase():
         this.activeSecurities.clear()
         for sid,security in this.allSecurities.items():
             if not security.isActive:
-                #log.debug("FrameworkBase.__updateSecurities() NOT ACTIVE {0}".format(security.qsec))
+                #logger.debug("FrameworkBase.__updateSecurities() NOT ACTIVE {0}".format(security.qsec))
                 continue
-            #log.debug("FrameworkBase.__updateSecurities() ACTIVE {0}".format(security.qsec))
+            #logger.debug("FrameworkBase.__updateSecurities() ACTIVE {0}".format(security.qsec))
             this.activeSecurities[sid] = security
             pass
 
@@ -580,7 +682,7 @@ class FrameworkBase():
     def initializeSecurity(this,security):
         '''override to do custom init logic on each security. 
         if you wish to use your own security, return it (it will replace the existing)'''
-        log.error("You should override FrameworkBase.initializeSecurity()")
+        logger.error("You should override FrameworkBase.initializeSecurity()")
         pass       
              
     def _getOrCreateSecurities(this,qsecArray):
@@ -620,16 +722,18 @@ class FrameworkBase():
 
 
     def _getDatetime(this):
+        '''returns current market time, using US/Eastern timezone'''
         #if is_offline_Zipline:
         #    if len(this.allSecurities) == 0:
-        #        return datetime.datetime.fromtimestamp(0,pytz.UTC)
+        #        #return datetime.datetime.fromtimestamp(0,pytz.UTC)
+        #        return pandas.Timestamp(datetime.datetime.fromtimestamp(0,pytz.UTC)).tz_convert('US/Eastern')
         #    else:
         #        assert(False,"need to fix this to return something valid.  all securities isn't good enough.  probably search for first active")
         #        return this.allSecurities.values()[0].datetime
         #else:
         #    return get_datetime()
         #pass
-        return get_datetime()
+        return pandas.Timestamp(pandas.Timestamp(get_datetime()).tz_convert('US/Eastern'))
 #entrypoints
 
 
@@ -736,8 +840,11 @@ class StandardTechnicalIndicators(FrameHistory):
                 this.framework.logger.error("{0} unable to obtain returns()  setting returns to zero  open={1}.  close = {2}".format(this.parent.qsec, this.open_price, this.close_price))
                 this.returns = 0.0
 
+    def initialize(this):
+        pass
+
     def constructFrameState(this,data):
-        #log.debug("StandardTechnicalIndicators.constructFrameState")
+        #logger.debug("StandardTechnicalIndicators.constructFrameState")
         currentState = StandardTechnicalIndicators.State(this.parent,data)
         return currentState
 
@@ -822,14 +929,16 @@ class ExampleFramework(FrameworkBase):
 
         ##PHASE 1: update technical indicators for ALL active securities (targeted or not)
         for sid,security in this.activeSecurities.items():
-            #log.debug("ExampleAlgo.update() about to update stdInd {0}, sid={1}".format(security, sid))
-            security.standardIndicators.update(data) 
+            #logger.debug("ExampleAlgo.update() about to update stdInd {0}, sid={1}".format(security, sid))
+            security.standardIndicators._update(data) 
        
         ##PHASE 2: run our strategies
         this.quantopianRealMoney.update(data)
 
         ##various graphing
-        record(port_value = this.context.portfolio.portfolio_value, pos_value = this.context.portfolio.positions_value , cash = this.context.portfolio.cash)
+        logger.record("port_value" ,this.context.portfolio.portfolio_value)
+        logger.record("pos_value",this.context.portfolio.positions_value)
+        logger.record("cash",this.context.portfolio.cash)
 
     pass
 
