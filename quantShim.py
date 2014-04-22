@@ -789,8 +789,11 @@ class StandardTechnicalIndicators(FrameHistory):
     feel free to extend this, or use as a reference for constructing specialized technical indicators'''
     class State:
         '''State recorded for each frame (minute).  number of frames history we store is determined by framework.maxHistoryFrames'''
-        def __init__(this,parent,data):
+        def __init__(this,parent, security, data):
             this.parent = parent
+            this.security = security
+            this.history = this.parent.state
+
             #preset for proper intelisence
             this.datetime = datetime.datetime.now()
             this.open_price = 0.0
@@ -813,39 +816,58 @@ class StandardTechnicalIndicators(FrameHistory):
             this.stddev45 = 0.0
             this.stddev60 = 0.0
 
-            this.datetime = data[this.parent.qsec].datetime
-            this.open_price = data[this.parent.qsec].open_price
-            this.close_price = data[this.parent.qsec].close_price
-            this.high = data[this.parent.qsec].high
-            this.low = data[this.parent.qsec].low
-            this.volume = data[this.parent.qsec].volume
+            this.datetime = data[this.security.qsec].datetime
+            this.open_price = data[this.security.qsec].open_price
+            this.close_price = data[this.security.qsec].close_price
+            this.high = data[this.security.qsec].high
+            this.low = data[this.security.qsec].low
+            this.volume = data[this.security.qsec].volume
 
-            this.mavg3 = data[this.parent.qsec].mavg(3)
-            this.mavg7 = data[this.parent.qsec].mavg(7)        
-            this.mavg15 = data[this.parent.qsec].mavg(15)
-            this.mavg30 = data[this.parent.qsec].mavg(30)        
-            this.mavg45 = data[this.parent.qsec].mavg(45)
-            this.mavg60 = data[this.parent.qsec].mavg(60)
+            ##QUANTOPIAN BUG:  this is not being calculated properly.  will compute manually (below) instead
+            #this.mavg3 = data[this.parent.qsec].mavg(3)
+            #this.mavg7 = data[this.parent.qsec].mavg(7)        
+            #this.mavg15 = data[this.parent.qsec].mavg(15)
+            #this.mavg30 = data[this.parent.qsec].mavg(30)        
+            #this.mavg45 = data[this.parent.qsec].mavg(45)
+            #this.mavg60 = data[this.parent.qsec].mavg(60)
 
-            this.stddev3 = data[this.parent.qsec].stddev(3)
-            this.stddev7 = data[this.parent.qsec].stddev(7)        
-            this.stddev15 = data[this.parent.qsec].stddev(15)
-            this.stddev30 = data[this.parent.qsec].stddev(30)        
-            this.stddev45 = data[this.parent.qsec].stddev(45)
-            this.stddev60 = data[this.parent.qsec].stddev(60)
+            #this.stddev3 = data[this.parent.qsec].stddev(3)
+            #this.stddev7 = data[this.parent.qsec].stddev(7)        
+            #this.stddev15 = data[this.parent.qsec].stddev(15)
+            #this.stddev30 = data[this.parent.qsec].stddev(30)        
+            #this.stddev45 = data[this.parent.qsec].stddev(45)
+            #this.stddev60 = data[this.parent.qsec].stddev(60)
+            
+            this.mavg3 = numpy.mean([state.close_price for state in this.history[0:3]])
+            this.mavg7 = numpy.mean([state.close_price for state in this.history[0:7]])  
+            this.mavg15 = numpy.mean([state.close_price for state in this.history[0:15]])
+            this.mavg30 = numpy.mean([state.close_price for state in this.history[0:30]])
+            this.mavg45 = numpy.mean([state.close_price for state in this.history[0:45]])
+            this.mavg60 = numpy.mean([state.close_price for state in this.history[0:60]])
+
+            this.stddev3 = numpy.std([state.close_price for state in this.history[0:3]])
+            this.stddev7 = numpy.std([state.close_price for state in this.history[0:7]])   
+            this.stddev15 = numpy.std([state.close_price for state in this.history[0:15]])
+            this.stddev30 = numpy.std([state.close_price for state in this.history[0:30]])
+            this.stddev45 = numpy.std([state.close_price for state in this.history[0:45]])
+            this.stddev60 = numpy.std([state.close_price for state in this.history[0:60]])
 
             try:                
-                this.returns = data[this.parent.qsec].returns()
+                this.returns = data[this.security.qsec].returns()
             except:
                 this.framework.logger.error("{0} unable to obtain returns()  setting returns to zero  open={1}.  close = {2}".format(this.parent.qsec, this.open_price, this.close_price))
                 this.returns = 0.0
+            pass
+
+        def __repr__(this):
+            return "c={0} mavg7={1} mavg30={2}".format(this.close_price,this.mavg7,this.mavg30)
 
     def initialize(this):
         pass
-
+    
     def constructFrameState(this,data):
         #logger.debug("StandardTechnicalIndicators.constructFrameState")
-        currentState = StandardTechnicalIndicators.State(this.parent,data)
+        currentState = StandardTechnicalIndicators.State(this, this.parent, data)
         return currentState
 
     
