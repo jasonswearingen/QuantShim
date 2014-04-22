@@ -2,7 +2,7 @@
 """
 TL;DR:  
 1) jump to the end of this file
-2) replace/extend "ExampleFramework" (around line 800)
+2) replace/extend "ExampleFramework" (around line 925)
 3) copy/paste this file to quantopian 
 4) backtest
 -------------

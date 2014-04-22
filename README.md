@@ -27,6 +27,13 @@ Why
 
 History
 ======
+- v1.0.4 (20140422)
+ - add "logging" global object to framework, 
+  - allows enabling/disabling of logs, 
+  - adds log time (in exchange time) 
+  - allows graphing records with variables as names.
+ - manually compute all standard technical indicators to workaround quantopian (TALib) bug in SMA computation
+ - this will be my last commit unless people make feature requests, so let me know....
 - v1.0.3 (20140419)
  - cleanup / simplifying workflows and architecture 
   - removed old examples,  now 'strategy' focused
