@@ -10,6 +10,7 @@ Features
 - WorstSpreadSlippage to simulate pessimistic yet realistic order execution
 - Strategy framework that's easy to extend
  - StrategyPositions: Each strategy can control it's own positions without interfering with other strategy
+  - Including algorithmic stop-loss and profit-loss triggers
  - Multiple Strategies supported
 - TechnicalIndicators framework that's easy to extend
  - State History stored for inspecting previous frames
@@ -27,13 +28,18 @@ Why
 
 History
 ======
+- v1.1.0 (20140616)
+ - big changes to strategyPositions (add algorithmic stop-loss)
+ - simplify security declaration based on Quantopian platform improvements
+ - add good performing "Volatility Bias" strategy as an example
+  - removed QuantopianRealMoneyStrategy example
+ - add Bollinger Band and Daily Indicators (not enabled by default) 
 - v1.0.4 (20140422)
  - add "logging" global object to framework, 
   - allows enabling/disabling of logs, 
   - adds log time (in exchange time) 
   - allows graphing records with variables as names.
  - manually compute all standard technical indicators to workaround quantopian (TALib) bug in SMA computation
- - this will be my last commit unless people make feature requests, so let me know....
 - v1.0.3 (20140419)
  - cleanup / simplifying workflows and architecture 
   - removed old examples,  now 'strategy' focused
