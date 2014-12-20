@@ -75,16 +75,16 @@ How To Install (Windows, using PythonTools for VisualStudio)
 - install activestate python (32bit)
 - run the following from your cmd prompt
 
- - pypm -g install pip
- - pypm -g install numpy
- - pypm -g install "scipy<0.10"
- - pypm -g install pytz
- - pypm -g install pandas
- - pypm -g install pyzmq
- - pypm -g install ipython
- - pypm --force -g install matplotlib
- - pypm -g install pyreadline
- - pip install zipline  
+	    pypm -g install pip
+	    pypm -g install numpy
+	    pypm -g install "scipy<0.10"
+	    pypm -g install pytz
+	    pypm -g install pandas
+	    pypm -g install pyzmq
+	    pypm -g install ipython
+	    pypm --force -g install matplotlib
+	    pypm -g install pyreadline
+	    pip install zipline  
 
 - run the .sln
 
